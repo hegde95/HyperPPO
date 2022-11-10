@@ -102,7 +102,8 @@ def ppo_update(frame_idx, states, actions, log_probs, returns, advantages, clip_
     for _ in range(PPO_EPOCHS):
         # grabs random mini-batches several times until we have covered all data
         for state, action, old_log_probs, return_, advantage in ppo_iter(states, actions, log_probs, returns, advantages):
-            model.actor.change_graph(repeat_sample = True)
+            if HYPER:
+                model.actor.change_graph(repeat_sample = True)
             dist, value = model(state)
             entropy = dist.entropy().mean()
             new_log_probs = dist.log_prob(action)
@@ -169,6 +170,11 @@ if __name__ == "__main__":
                 'params':model.actor.ghn.parameters(),
                 'lr' :1e-4, 
                 'weight_decay' :1e-5,
+            },
+            {
+                'params':model.log_std,
+                'lr' :LEARNING_RATE,
+                # 'weight_decay' :1e-5,
             },
             {
                 'params':model.critic.parameters(),
