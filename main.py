@@ -15,27 +15,49 @@ from lib.Model import ActorCritic, HyperActorCritic
 from lib.multiprocessing_env import SubprocVecEnv
 
 
-NUM_ENVS = 8 #@param {type:"integer"}
-ENV_ID = "BipedalWalker-v3" #@param {type:"string"}
-HIDDEN_SIZE = 256 #@param {type:"integer"}
-LEARNING_RATE = 1e-4 #@param {type:"number"}
-GAMMA = 0.99 #@param {type:"number"}
-GAE_LAMBDA = 0.95 #@param {type:"number"}
-PPO_EPSILON = 0.2 #@param {type:"number"}
-CRITIC_DISCOUNT = 0.5 #@param {type:"number"}
-ENTROPY_BETA = 0.001 #@param {type:"number"}
-PPO_STEPS = 1024 #@param {type:"integer"}
-MINI_BATCH_SIZE = 64 #@param {type:"integer"}
-PPO_EPOCHS = 10 #@param {type:"integer"}
-TEST_EPOCHS = 5 #@param {type:"integer"}
-NUM_TESTS = 5 #@param {type:"integer"}
-TARGET_REWARD = 2500 #@param {type:"integer"}
+# NUM_ENVS = 8 #@param {type:"integer"}
+# ENV_ID = "HalfCheetah-v3" #@param {type:"string"}
+# HIDDEN_SIZE = 256 #@param {type:"integer"}
+# LEARNING_RATE = 1e-4 #@param {type:"number"}
+# GAMMA = 0.99 #@param {type:"number"}
+# GAE_LAMBDA = 0.95 #@param {type:"number"}
+# PPO_EPSILON = 0.2 #@param {type:"number"}
+# CRITIC_DISCOUNT = 0.5 #@param {type:"number"}
+# ENTROPY_BETA = 0.001 #@param {type:"number"}
+# PPO_STEPS = 1024 #@param {type:"integer"}
+# MINI_BATCH_SIZE = 64 #@param {type:"integer"}
+# PPO_EPOCHS = 10 #@param {type:"integer"}
+# TEST_EPOCHS = 5 #@param {type:"integer"}
+# NUM_TESTS = 5 #@param {type:"integer"}
+# TARGET_REWARD = 2500 #@param {type:"integer"}
 
-LOAD_MODEL = "New"
+def get_args():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env', type=str, default='BipedalWalker-v3')
+    parser.add_argument('--num_envs', type=int, default=8)
+    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--gae_lambda', type=float, default=0.95)
+    parser.add_argument('--ppo_epsilon', type=float, default=0.2)
+    parser.add_argument('--critic_discount', type=float, default=0.5)
+    parser.add_argument('--entropy_beta', type=float, default=0.001)
+    parser.add_argument('--ppo_steps', type=int, default=1024)
+    parser.add_argument('--mini_batch_size', type=int, default=64)
+    parser.add_argument('--ppo_epochs', type=int, default=10)
+    parser.add_argument('--test_epochs', type=int, default=5)
+    parser.add_argument('--num_tests', type=int, default=5)
+    parser.add_argument('--target_reward', type=int, default=2500)
+    parser.add_argument('--logdir', type=str, default='runs')
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--hyper', action='store_true')
+    return parser.parse_args()
 
-SEED = 1
 
-HYPER = True
+# SEED = 1
+
+# HYPER = True
 
 def make_env():
     # returns a function which creates a single environment
@@ -68,7 +90,7 @@ def normalize(x):
     return x
 
 
-def compute_gae(next_value, rewards, masks, values, gamma=GAMMA, lam=GAE_LAMBDA):
+def compute_gae(next_value, rewards, masks, values, gamma, lam):
     values = values + [next_value]
     gae = 0
     returns = []
@@ -89,7 +111,7 @@ def ppo_iter(states, actions, log_probs, returns, advantage):
         yield states[rand_ids, :], actions[rand_ids, :], log_probs[rand_ids, :], returns[rand_ids, :], advantage[rand_ids, :]
 
 
-def ppo_update(frame_idx, states, actions, log_probs, returns, advantages, clip_param=PPO_EPSILON):
+def ppo_update(frame_idx, states, actions, log_probs, returns, advantages, clip_param):
     count_steps = 0
     sum_returns = 0.0
     sum_advantage = 0.0
@@ -141,6 +163,28 @@ def ppo_update(frame_idx, states, actions, log_probs, returns, advantages, clip_
 
 
 if __name__ == "__main__":
+
+    args = get_args()
+    ENV_ID = args.env
+    GAMMA = args.gamma
+    GAE_LAMBDA = args.gae_lambda
+    PPO_EPSILON = args.ppo_epsilon
+    CRITIC_DISCOUNT = args.critic_discount
+    ENTROPY_BETA = args.entropy_beta
+    PPO_STEPS = args.ppo_steps
+    MINI_BATCH_SIZE = args.mini_batch_size
+    PPO_EPOCHS = args.ppo_epochs
+    TEST_EPOCHS = args.test_epochs
+    NUM_TESTS = args.num_tests
+    TARGET_REWARD = args.target_reward
+    LOGDIR = args.logdir
+    SEED = args.seed
+    HYPER = args.hyper
+    LEARNING_RATE = args.learning_rate
+    NUM_ENVS = args.num_envs
+    HIDDEN_SIZE = args.hidden_size
+
+
     # set the seed
     torch.manual_seed(SEED)
     np.random.seed(SEED)
@@ -225,7 +269,7 @@ if __name__ == "__main__":
 
         next_state = torch.FloatTensor(next_state).to(device)
         _, next_value = model(next_state)
-        returns = compute_gae(next_value, rewards, masks, values)
+        returns = compute_gae(next_value, rewards, masks, values, GAMMA, GAE_LAMBDA)
 
         returns = torch.cat(returns).detach()
         log_probs = torch.cat(log_probs).detach()
@@ -235,7 +279,7 @@ if __name__ == "__main__":
         advantage = returns - values
         advantage = normalize(advantage)
 
-        ppo_update(frame_idx, states, actions, log_probs, returns, advantage)
+        ppo_update(frame_idx, states, actions, log_probs, returns, advantage, PPO_EPSILON)
         train_epoch += 1
 
         if train_epoch % TEST_EPOCHS == 0:
