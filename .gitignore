@@ -3,3 +3,5 @@ checkpoints
 
 # all pycache files
 __pycache__
+wandb
+.vscode
