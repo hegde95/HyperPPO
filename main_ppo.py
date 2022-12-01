@@ -76,6 +76,12 @@ def parse_args():
         help="the maximum norm for the gradient clipping")
     parser.add_argument("--target-kl", type=float, default=None,
         help="the target KL divergence threshold")
+
+    parser.add_argument('--wandb-tag', type=str,
+        help='Use a custom tag for wandb. (default: "")')   
+    parser.add_argument("--debug", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+        help="Run in debug mode")     
+                                 
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -156,6 +162,14 @@ if __name__ == "__main__":
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
+
+        tags = []
+        if args.hyper:
+            tags.append("hyper")
+        if args.debug:
+            tags.append("debug")                
+        if args.wandb_tag:
+            tags.append(args.wandb_tag)   
 
         wandb.init(
             project=args.wandb_project_name,
