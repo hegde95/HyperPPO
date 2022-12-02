@@ -132,11 +132,13 @@ class Agent(nn.Module):
         
         else:
             self.actor_mean = nn.Sequential(
-                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-                nn.Tanh(),
-                layer_init(nn.Linear(64, 64)),
-                nn.Tanh(),
-                layer_init(nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01),
+                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 256)),
+                nn.ReLU(),
+                layer_init(nn.Linear(256, 256)),
+                nn.ReLU(),
+                layer_init(nn.Linear(256, 256)),
+                nn.ReLU(),                
+                layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
             )
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
