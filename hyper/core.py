@@ -20,7 +20,7 @@ class hyperActor(nn.Module):
                 search = False, 
                 conditional = True, 
                 meta_batch_size = 1,
-                gumbel_tau = 1.0,
+                # gumbel_tau = 1.0,
                 device = "cpu"
                 ):
         super().__init__()
@@ -34,11 +34,11 @@ class hyperActor(nn.Module):
 
         list_of_allowable_layers = list(allowable_layers)
 
-        # self.list_of_arcs = []
-        # for k in range(1,5):
-        #     self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))
+        self.list_of_arcs = []
+        for k in range(1,5):
+            self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))
         
-        self.list_of_arcs = [(256,256,256) for i in range(1000)]
+        # self.list_of_arcs = [(256,256,256) for i in range(1000)]
         
         self.list_of_arcs.sort(key = lambda x:self.get_params(x))
 

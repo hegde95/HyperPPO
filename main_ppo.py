@@ -127,7 +127,7 @@ class Agent(nn.Module):
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([256]), meta_batch_size = 8, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256,512]), meta_batch_size = 8, device=device)
             self.actor_mean.change_graph()
         
         else:
@@ -239,8 +239,8 @@ if __name__ == "__main__":
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
 
-    if args.hyper:
-        agent.actor_mean.change_graph()
+    # if args.hyper:
+    #     agent.actor_mean.change_graph()
 
     for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
@@ -273,6 +273,11 @@ if __name__ == "__main__":
                 print(f"global_step={global_step}, episodic_return={avg_ep_reward}")
                 writer.add_scalar("charts/episodic_return", avg_ep_reward, global_step)
                 writer.add_scalar("charts/episodic_length", avg_ep_length, global_step)
+
+                # change the hyper network current model
+                if args.hyper:
+                    agent.actor_mean.change_graph()
+
                 break
 
                 # for k in range(args.num_envs):
