@@ -207,8 +207,8 @@ if __name__ == "__main__":
         optimizer = torch.optim.Adam([
             {
                 'params':agent.actor_mean.ghn.parameters(),
-                'lr' :1e-4, 
-                'weight_decay' :1e-5,
+                'lr' :args.learning_rate, 
+                # 'weight_decay' :1e-5,
             },
             {
                 'params':agent.actor_logstd,
