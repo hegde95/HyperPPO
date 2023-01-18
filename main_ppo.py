@@ -157,10 +157,13 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, action=None):
+    def get_action_and_value(self, x, action=None, ignore_value = False):
         if self.hyper:
             action_mean, _ = self.actor_mean(x)
-            value = self.critic(torch.cat([self.actor_mean.arch_per_state_dim,x], -1))
+            if ignore_value:
+                value = None
+            else:
+                value = self.critic(torch.cat([self.actor_mean.arch_per_state_dim,x], -1))
         else:
             action_mean = self.actor_mean(x)
             value = self.critic(x)
@@ -248,7 +251,7 @@ if __name__ == "__main__":
 
     if args.hyper:
         policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
-        policy_shape_inds = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
+        policy_shape_inds = -1 + torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
         policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
@@ -333,8 +336,8 @@ if __name__ == "__main__":
                 next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            for t in reversed(range(args.num_steps)):
-                if t == args.num_steps - 1:
+            for t in reversed(range(step + 1)):
+                if t == step:
                     nextnonterminal = 1.0 - next_done
                     nextvalues = next_value
                 else:
@@ -345,25 +348,30 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
+        b_obs = obs[:step].reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs[:step].reshape(-1)
+        b_actions = actions[:step].reshape((-1,) + envs.single_action_space.shape)
+        b_advantages = advantages[:step].reshape(-1)
+        b_returns = returns[:step].reshape(-1)
+        b_values = values[:step].reshape(-1)
         
         if args.hyper:
-            b_policy_shapes = policy_shapes.reshape((-1,agent.actor_mean.arch_max_len))
-            b_policy_shape_inds = policy_shape_inds.reshape((-1,agent.actor_mean.shape_inds_max_len))
-            b_policy_indices = policy_indices.reshape(-1)
+            b_policy_shapes = policy_shapes[:step].reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds[:step].reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_indices = policy_indices[:step].reshape(-1)
 
         # Optimizing the policy and value network
-        b_inds = np.arange(args.batch_size)
+        batch_size = int(args.num_envs * step)
+        minibatch_size = int(batch_size  // args.num_minibatches) 
+
+        # make minibatch_size multiple of 8
+        minibatch_size = minibatch_size - minibatch_size % 8
+        b_inds = np.arange(batch_size)
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
-            for start in range(0, args.batch_size, args.minibatch_size):
-                end = start + args.minibatch_size
+            for start in range(0, batch_size, minibatch_size):
+                end = start + minibatch_size
                 mb_inds = b_inds[start:end]
 
                 if args.hyper:
@@ -371,7 +379,7 @@ if __name__ == "__main__":
                     # agent.actor_mean.set_graph(b_policy_shapes[mb_inds], b_policy_indices[mb_inds], b_policy_shape_inds[mb_inds])
 
                 # _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
-                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
+                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], ignore_value = True)
                 if args.hyper:
                     newvalue = agent.critic(torch.cat([b_policy_shapes[mb_inds], b_obs[mb_inds]], -1)).reshape(-1)
                 else:
