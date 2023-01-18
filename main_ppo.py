@@ -232,6 +232,9 @@ if __name__ == "__main__":
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
+    if args.hyper:
+        policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
+
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
@@ -260,12 +263,18 @@ if __name__ == "__main__":
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
+            if args.hyper:
+                policy_shapes[step] = agent.actor_mean.shape_ind_per_state_dim
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
             # done = terminated | truncated
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
+
+            # change the hyper network current model
+            if args.hyper:
+                agent.actor_mean.change_graph()
 
             if "episode" in info.keys():
                 avg_ep_reward = np.mean([info['episode'][k]['r'] for k in range(args.num_envs)])
@@ -274,9 +283,9 @@ if __name__ == "__main__":
                 writer.add_scalar("charts/episodic_return", avg_ep_reward, global_step)
                 writer.add_scalar("charts/episodic_length", avg_ep_length, global_step)
 
-                # change the hyper network current model
-                if args.hyper:
-                    agent.actor_mean.change_graph()
+                # # change the hyper network current model
+                # if args.hyper:
+                #     agent.actor_mean.change_graph()
 
                 break
 
@@ -324,7 +333,7 @@ if __name__ == "__main__":
                 mb_inds = b_inds[start:end]
 
                 if args.hyper:
-                    agent.actor_mean.change_graph(repeat_sample = True)
+                    agent.actor_mean.change_graph(repeat_sample = False)
 
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
