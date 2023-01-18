@@ -248,6 +248,7 @@ if __name__ == "__main__":
 
     if args.hyper:
         policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
+        policy_shape_inds = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
         policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
@@ -267,6 +268,9 @@ if __name__ == "__main__":
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        if args.hyper:
+            agent.actor_mean.change_graph()
+
         for step in range(0, args.num_steps):
             global_step += 1 * args.num_envs
             obs[step] = next_obs
@@ -280,6 +284,7 @@ if __name__ == "__main__":
             logprobs[step] = logprob
             if args.hyper:
                 policy_shapes[step] = agent.actor_mean.arch_per_state_dim 
+                policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
                 policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim
 
             # TRY NOT TO MODIFY: execute the game and log data.
@@ -317,6 +322,7 @@ if __name__ == "__main__":
         
         if args.hyper:
             final_policy_shape = agent.actor_mean.arch_per_state_dim 
+            final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
             final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
 
         # bootstrap value if not done
@@ -348,6 +354,8 @@ if __name__ == "__main__":
         
         if args.hyper:
             b_policy_shapes = policy_shapes.reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds.reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_indices = policy_indices.reshape(-1)
 
         # Optimizing the policy and value network
         b_inds = np.arange(args.batch_size)
@@ -360,7 +368,7 @@ if __name__ == "__main__":
 
                 if args.hyper:
                     agent.actor_mean.change_graph(repeat_sample = False)
-                    # agent.actor_mean.set_graph(b_policy_shapes[mb_inds])
+                    # agent.actor_mean.set_graph(b_policy_shapes[mb_inds], b_policy_indices[mb_inds], b_policy_shape_inds[mb_inds])
 
                 # _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
