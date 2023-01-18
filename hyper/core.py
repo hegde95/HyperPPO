@@ -55,6 +55,7 @@ class hyperActor(nn.Module):
 
         self.list_of_shape_inds_lenths = [x.squeeze().numel() for x in self.list_of_shape_inds]
         self.shape_inds_max_len = max(self.list_of_shape_inds_lenths)
+        self.arch_max_len = 4
         # pad -1 to the end of each shape_ind
         for i in range(len(self.list_of_shape_inds)):
             num_pad = (self.shape_inds_max_len - self.list_of_shape_inds[i].shape[0])
@@ -92,29 +93,36 @@ class hyperActor(nn.Module):
         # self.max_log_std = 0
         # self.act_limit = act_limit
 
-    def set_graph(self, graph):
-        # graph has to be list of list of layer, eg [[32,16,8],[4,128,4]]
-        size = len(graph)
-        shape_inds = []
-        self.current_model = []
-        self.param_counts = []
-        self.capacities = []
-        for i in range(size):
-            shape_ind = [torch.tensor(0).to(self.device)]
-            for j in range(len(graph[i])):
-                shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
-                shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
-            shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
-            shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
-            shape_ind = torch.stack(shape_ind).view(-1,1)
-            shape_inds.append(shape_ind)
-            self.current_model.append(MlpNetwork(fc_layers=graph[i], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim))
-            self.param_counts.append(self.get_params(graph[i]))
-            # self.capacities.append(get_capacity(graph[i], self.obs_dim, self.act_dim))
-        self.list_of_sampled_shape_inds = shape_inds
-        self.sampled_shape_inds = torch.cat(shape_inds)
-        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+    # def set_graph(self, graph):
+    #     # graph has to be list of list of layer, eg [[32,16,8],[4,128,4]]
+    #     size = len(graph)
+    #     shape_inds = []
+    #     self.current_model = []
+    #     self.param_counts = []
+    #     self.capacities = []
+    #     for i in range(size):
+    #         shape_ind = [torch.tensor(0).to(self.device)]
+    #         for j in range(len(graph[i])):
+    #             shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
+    #             shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
+    #         shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
+    #         shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
+    #         shape_ind = torch.stack(shape_ind).view(-1,1)
+    #         shape_inds.append(shape_ind)
+    #         self.current_model.append(MlpNetwork(fc_layers=graph[i], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim))
+    #         self.param_counts.append(self.get_params(graph[i]))
+    #         # self.capacities.append(get_capacity(graph[i], self.obs_dim, self.act_dim))
+    #     self.list_of_sampled_shape_inds = shape_inds
+    #     self.sampled_shape_inds = torch.cat(shape_inds)
+    #     _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
 
+    def set_graph(self, shape_ind_vec):
+        self.shape_ind_per_state_dim = shape_ind_vec
+
+        
+
+
+    
     def get_params(self, net):
         ct = 0
         ct += ((self.obs_dim + 1) *net[0])
@@ -136,6 +144,7 @@ class hyperActor(nn.Module):
                 # shuffle
                 np.random.shuffle(self.list_of_arc_indices)
 
+            self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
             self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
             self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
@@ -150,9 +159,11 @@ class hyperActor(nn.Module):
         # x = torch.stack([model(state) for model in self.current_model]).mean(dim=0)
         batch_per_net = int(state.shape[0]//self.meta_batch_size)
 
-        self.shape_ind_per_state_dim = torch.cat([self.current_shape_inds_vec[i].repeat(batch_per_net,1) for i in range(self.meta_batch_size)])
+        self.shape_ind_per_state_dim = torch.cat([self.current_shape_inds_vec[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
+        self.arch_per_state_dim = torch.cat([self.current_archs[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
+        self.sampled_indices_per_state_dim = torch.cat([torch.tensor([self.sampled_indices[i]]).repeat(batch_per_net) for i in range(len(self.current_model))])
 
-        x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(self.meta_batch_size)])
+        x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(len(self.current_model))])
 
         if len(x.shape) == 1:    
             mu = x[:x.shape[-1]//2]

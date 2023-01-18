@@ -119,16 +119,19 @@ class Agent(nn.Module):
     def __init__(self, envs, hyper = False):
         super().__init__()
         self.hyper = hyper
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
-        )
+ 
         if self.hyper:
             self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256,512]), meta_batch_size = 8, device=device)
             self.actor_mean.change_graph()
+
+            self.critic = nn.Sequential(
+                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod() + self.actor_mean.arch_max_len, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 1), std=1.0),
+            )
+
         
         else:
             self.actor_mean = nn.Sequential(
@@ -140,6 +143,15 @@ class Agent(nn.Module):
                 nn.ReLU(),                
                 layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
             )
+
+            self.critic = nn.Sequential(
+                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 1), std=1.0),
+            )      
+
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
     def get_value(self, x):
@@ -148,15 +160,17 @@ class Agent(nn.Module):
     def get_action_and_value(self, x, action=None):
         if self.hyper:
             action_mean, _ = self.actor_mean(x)
+            value = self.critic(torch.cat([self.actor_mean.arch_per_state_dim,x], -1))
         else:
             action_mean = self.actor_mean(x)
+            value = self.critic(x)
 
         action_logstd = self.actor_logstd.expand_as(action_mean)
         action_std = torch.exp(action_logstd)
         probs = Normal(action_mean, action_std)
         if action is None:
             action = probs.sample()
-        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), value
 
 
 if __name__ == "__main__":
@@ -233,7 +247,8 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     if args.hyper:
-        policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
+        policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
+        policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -264,7 +279,8 @@ if __name__ == "__main__":
             actions[step] = action
             logprobs[step] = logprob
             if args.hyper:
-                policy_shapes[step] = agent.actor_mean.shape_ind_per_state_dim
+                policy_shapes[step] = agent.actor_mean.arch_per_state_dim 
+                policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
@@ -298,10 +314,17 @@ if __name__ == "__main__":
             elif done.any():
                 print(f"global_step={global_step}, episodic_return={rewards[:step+1,:].mean()}")
                 writer.add_scalar("charts/episodic_return", rewards[:step+1,:].mean(), global_step)
+        
+        if args.hyper:
+            final_policy_shape = agent.actor_mean.arch_per_state_dim 
+            final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
+            if args.hyper:
+                next_value = agent.critic(torch.cat([final_policy_shape ,next_obs],-1)).squeeze(-1)
+            else:
+                next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
@@ -322,6 +345,9 @@ if __name__ == "__main__":
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
+        
+        if args.hyper:
+            b_policy_shapes = policy_shapes.reshape((-1,agent.actor_mean.arch_max_len))
 
         # Optimizing the policy and value network
         b_inds = np.arange(args.batch_size)
@@ -334,8 +360,14 @@ if __name__ == "__main__":
 
                 if args.hyper:
                     agent.actor_mean.change_graph(repeat_sample = False)
+                    # agent.actor_mean.set_graph(b_policy_shapes[mb_inds])
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
+                # _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
+                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
+                if args.hyper:
+                    newvalue = agent.critic(torch.cat([b_policy_shapes[mb_inds], b_obs[mb_inds]], -1)).reshape(-1)
+                else:
+                    newvalue = agent.critic(b_obs[mb_inds]).reshape(-1)
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
