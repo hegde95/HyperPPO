@@ -370,13 +370,13 @@ if __name__ == "__main__":
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
-            for start in range(0, batch_size//8, minibatch_size):
+            for start in range(0, batch_size, minibatch_size):
                 end = start + minibatch_size
                 mb_inds = b_inds[start:end]
 
                 if args.hyper:
-                    agent.actor_mean.change_graph(repeat_sample = False)
-                    # agent.actor_mean.set_graph(b_policy_shapes[mb_inds], b_policy_indices[mb_inds], b_policy_shape_inds[mb_inds])
+                    # agent.actor_mean.change_graph(repeat_sample = False)
+                    agent.actor_mean.set_graph(b_policy_shapes[mb_inds], b_policy_indices[mb_inds], b_policy_shape_inds[mb_inds])
 
                 # _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], ignore_value = True)
