@@ -48,7 +48,7 @@ def parse_args():
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=3e-4,
         help="the learning rate of the optimizer")
-    parser.add_argument("--num-envs", type=int, default=64,
+    parser.add_argument("--num-envs", type=int, default=2,
         help="the number of parallel game environments")
     parser.add_argument("--num-steps", type=int, default=2048,
         help="the number of steps to run in each environment per policy rollout")
@@ -121,7 +121,7 @@ class Agent(nn.Module):
         self.hyper = hyper
  
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256,512]), meta_batch_size = 8, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256,512]), meta_batch_size = 2, device=device)
             self.actor_mean.change_graph()
 
             self.critic = nn.Sequential(
@@ -175,6 +175,32 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), value
 
+    def get_mean_action(self,x):
+        if self.hyper:
+            action_mean, _ = self.actor_mean(x)
+        else:
+            action_mean = self.actor_mean(x)
+        
+        return action_mean
+
+def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000):
+    test_rewards = []
+
+    for _ in range(num_episodes):
+        obs = envs.reset()
+        done = [False for _ in range(envs.num_envs)]
+        episode_reward = 0
+        for step in range(max_steps):
+            obs = torch.FloatTensor(obs).to(device)
+            action = agent.get_mean_action(obs)
+            action = action.detach().cpu().numpy()
+            obs, reward, done, _ = envs.step(action)
+            episode_reward += np.mean(reward)
+            if all(done):
+                break
+        test_rewards.append(episode_reward)
+    return np.sum(test_rewards)
+
 
 if __name__ == "__main__":
     args = parse_args()
@@ -215,7 +241,11 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
+        [make_env(args.env_id, args.seed + i, i, False, run_name, args.gamma) for i in range(args.num_envs)]
+    )
+
+    test_envs = gym.vector.SyncVectorEnv(
+        [make_env(args.env_id, args.seed + args.num_envs + i, i, args.capture_video, run_name, args.gamma) for i in range(8)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
@@ -348,20 +378,20 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs[:step].reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs[:step].reshape(-1)
-        b_actions = actions[:step].reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages[:step].reshape(-1)
-        b_returns = returns[:step].reshape(-1)
-        b_values = values[:step].reshape(-1)
+        b_obs = obs[:step+1].reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs[:step+1].reshape(-1)
+        b_actions = actions[:step+1].reshape((-1,) + envs.single_action_space.shape)
+        b_advantages = advantages[:step+1].reshape(-1)
+        b_returns = returns[:step+1].reshape(-1)
+        b_values = values[:step+1].reshape(-1)
         
         if args.hyper:
-            b_policy_shapes = policy_shapes[:step].reshape((-1,agent.actor_mean.arch_max_len))
-            b_policy_shape_inds = policy_shape_inds[:step].reshape((-1,agent.actor_mean.shape_inds_max_len))
-            b_policy_indices = policy_indices[:step].reshape(-1)
+            b_policy_shapes = policy_shapes[:step+1].reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds[:step+1].reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_indices = policy_indices[:step+1].reshape(-1)
 
         # Optimizing the policy and value network
-        batch_size = int(args.num_envs * step)
+        batch_size = int(args.num_envs * (step + 1))
         minibatch_size = int(batch_size  // args.num_minibatches) 
 
         # make minibatch_size multiple of 8
@@ -433,6 +463,8 @@ if __name__ == "__main__":
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
+        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000)
+
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
@@ -444,6 +476,11 @@ if __name__ == "__main__":
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+        print("test reward:", test_reward)
+        writer.add_scalar("charts/test_reward", test_reward, global_step)
+
+        print("------------------------------------------------------------")
 
     envs.close()
     writer.close()
