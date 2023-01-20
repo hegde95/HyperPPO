@@ -121,7 +121,7 @@ class Agent(nn.Module):
         self.hyper = hyper
  
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256,512]), meta_batch_size = 2, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = 2, device=device)
             self.actor_mean.change_graph()
 
             self.critic = nn.Sequential(
@@ -157,10 +157,10 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, action=None, ignore_value = False):
+    def get_action_and_value(self, x, action=None, train_loop = False):
         if self.hyper:
-            action_mean, _ = self.actor_mean(x)
-            if ignore_value:
+            action_mean, _ = self.actor_mean(x, track = not train_loop)
+            if train_loop:
                 value = None
             else:
                 value = self.critic(torch.cat([self.actor_mean.arch_per_state_dim,x], -1))
@@ -177,14 +177,17 @@ class Agent(nn.Module):
 
     def get_mean_action(self,x):
         if self.hyper:
-            action_mean, _ = self.actor_mean(x)
+            action_mean, _ = self.actor_mean(x, track = False)
         else:
             action_mean = self.actor_mean(x)
         
         return action_mean
 
-def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000):
+def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None):
     test_rewards = []
+    if args.hyper:
+        # agent.actor_mean.change_graph()
+        agent.actor_mean.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
 
     for _ in range(num_episodes):
         obs = envs.reset()
@@ -292,6 +295,32 @@ if __name__ == "__main__":
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
+
+    # set test architectures as:
+    # 0. [4, 4]
+    # 1. [8, 8, 8]
+    # 2. [16]
+    # 3. [16, 16, 16]
+    # 4. [32, 32, 32]
+    # 5. [64, 64, 64, 64]
+    # 6. [128, 128, 128, 128]
+    # 7. [256, 256, 256, 256]
+    if args.hyper:
+        list_of_test_archs = [
+            [4, 4],
+            [8, 8, 8],
+            [16],
+            [16, 16, 16],
+            [32, 32, 32],
+            [64, 64, 64, 64],
+            [128, 128, 128, 128],
+            [256, 256, 256, 256],
+        ]
+        list_of_test_arch_indices = [[i for i,arc in enumerate(agent.actor_mean.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
+        list_of_test_shape_inds = torch.stack([agent.actor_mean.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
+    else:
+        list_of_test_arch_indices = None
+        list_of_test_shape_inds = None
 
     # if args.hyper:
     #     agent.actor_mean.change_graph()
@@ -408,10 +437,10 @@ if __name__ == "__main__":
 
                 if args.hyper:
                     # agent.actor_mean.change_graph(repeat_sample = False)
-                    agent.actor_mean.set_graph(b_policy_shapes[mb_inds], b_policy_indices[mb_inds], b_policy_shape_inds[mb_inds])
+                    agent.actor_mean.set_graph(b_policy_indices[mb_inds].cpu().numpy().astype(int), b_policy_shape_inds[mb_inds])
 
                 # _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
-                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], ignore_value = True)
+                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], train_loop = True)
                 if args.hyper:
                     newvalue = agent.critic(torch.cat([b_policy_shapes[mb_inds], b_obs[mb_inds]], -1)).reshape(-1)
                 else:
@@ -465,7 +494,7 @@ if __name__ == "__main__":
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000)
+        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
