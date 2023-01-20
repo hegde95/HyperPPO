@@ -184,25 +184,26 @@ class Agent(nn.Module):
         return action_mean
 
 def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None):
-    test_rewards = []
+    test_rewards = np.zeros((num_episodes, envs.num_envs))
     if args.hyper:
         # agent.actor_mean.change_graph()
         agent.actor_mean.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
 
-    for _ in range(num_episodes):
+    for ep in range(num_episodes):
         obs = envs.reset()
         done = [False for _ in range(envs.num_envs)]
-        episode_reward = 0
+        episode_reward = np.zeros(envs.num_envs)
         for step in range(max_steps):
             obs = torch.FloatTensor(obs).to(device)
             action = agent.get_mean_action(obs)
             action = action.detach().cpu().numpy()
             obs, reward, done, _ = envs.step(action)
-            episode_reward += np.mean(reward)
+            # episode_reward += reward
+            test_rewards[ep] += reward
             if all(done):
                 break
-        test_rewards.append(episode_reward)
-    return np.sum(test_rewards)
+        # test_rewards.append(episode_reward)
+    return test_rewards.mean(0)
 
 
 if __name__ == "__main__":
@@ -508,8 +509,12 @@ if __name__ == "__main__":
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-        print("test reward:", test_reward)
-        writer.add_scalar("charts/test_reward", test_reward, global_step)
+        if args.hyper:
+            for i in range(len(list_of_test_arch_indices)):
+                print(f"test reward_{i}:", test_reward[i])
+                writer.add_scalar("f_charts/test_reward_{i}", test_reward[i], global_step)       
+        print("test reward:", test_reward.mean())
+        writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
 
         print("------------------------------------------------------------")
 
