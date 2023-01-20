@@ -192,16 +192,17 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
     for ep in range(num_episodes):
         obs = envs.reset()
         done = [False for _ in range(envs.num_envs)]
-        episode_reward = np.zeros(envs.num_envs)
+        # episode_reward = np.zeros(envs.num_envs)
         for step in range(max_steps):
             obs = torch.FloatTensor(obs).to(device)
             action = agent.get_mean_action(obs)
             action = action.detach().cpu().numpy()
-            obs, reward, done, _ = envs.step(action)
+            obs, reward, done, info = envs.step(action)
             # episode_reward += reward
-            test_rewards[ep] += reward
+            # test_rewards[ep] += reward
             if all(done):
                 break
+        test_rewards[ep] = np.array([info['episode'][k]['r'] for k in range(envs.num_envs)])
         # test_rewards.append(episode_reward)
     return test_rewards.mean(0)
 
