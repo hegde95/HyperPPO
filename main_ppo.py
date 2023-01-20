@@ -211,6 +211,8 @@ if __name__ == "__main__":
         tags = []
         if args.hyper:
             tags.append("hyper")
+        else:
+            tags.append("vanilla")
         if args.debug:
             tags.append("debug")                
         if args.wandb_tag:
