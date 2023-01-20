@@ -512,7 +512,7 @@ if __name__ == "__main__":
         if args.hyper:
             for i in range(len(list_of_test_arch_indices)):
                 print(f"test reward_{i}:", test_reward[i])
-                writer.add_scalar("f_charts/test_reward_{i}", test_reward[i], global_step)       
+                writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)       
         print("test reward:", test_reward.mean())
         writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
 
