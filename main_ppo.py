@@ -48,7 +48,7 @@ def parse_args():
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=3e-4,
         help="the learning rate of the optimizer")
-    parser.add_argument("--num-envs", type=int, default=2,
+    parser.add_argument("--num-envs", type=int, default=64,
         help="the number of parallel game environments")
     parser.add_argument("--num-steps", type=int, default=2048,
         help="the number of steps to run in each environment per policy rollout")
@@ -58,7 +58,7 @@ def parse_args():
         help="the discount factor gamma")
     parser.add_argument("--gae-lambda", type=float, default=0.95,
         help="the lambda for the general advantage estimation")
-    parser.add_argument("--num-minibatches", type=int, default=125,
+    parser.add_argument("--num-minibatches", type=int, default=32,
         help="the number of mini-batches")
     parser.add_argument("--update-epochs", type=int, default=10,
         help="the K epochs to update the policy")
@@ -121,7 +121,7 @@ class Agent(nn.Module):
         self.hyper = hyper
  
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = 2, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = 8, device=device)
             self.actor_mean.change_graph()
 
             self.critic = nn.Sequential(
@@ -157,13 +157,13 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, action=None, train_loop = False):
+    def get_action_and_value(self, x, action=None, track = True, get_value = True):
         if self.hyper:
-            action_mean, _ = self.actor_mean(x, track = not train_loop)
-            if train_loop:
-                value = None
-            else:
+            action_mean, _ = self.actor_mean(x, track = track)
+            if get_value:
                 value = self.critic(torch.cat([self.actor_mean.arch_per_state_dim,x], -1))
+            else:
+                value = None
         else:
             action_mean = self.actor_mean(x)
             value = self.critic(x)
@@ -438,13 +438,14 @@ if __name__ == "__main__":
                 mb_inds = b_inds[start:end]
 
                 if args.hyper:
-                    # agent.actor_mean.change_graph(repeat_sample = False)
-                    agent.actor_mean.set_graph(b_policy_indices[mb_inds].cpu().numpy().astype(int), b_policy_shape_inds[mb_inds])
+                    agent.actor_mean.change_graph(repeat_sample = False)
+                    # agent.actor_mean.set_graph(b_policy_indices[mb_inds].cpu().numpy().astype(int), b_policy_shape_inds[mb_inds])
 
                 # _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
-                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], train_loop = True)
+                _, newlogprob, entropy, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], track = True, get_value = False)
                 if args.hyper:
                     newvalue = agent.critic(torch.cat([b_policy_shapes[mb_inds], b_obs[mb_inds]], -1)).reshape(-1)
+                    # newvalue = agent.critic(torch.cat([agent.actor_mean.arch_per_state_dim, b_obs[mb_inds]], -1)).reshape(-1)
                 else:
                     newvalue = agent.critic(b_obs[mb_inds]).reshape(-1)
                 logratio = newlogprob - b_logprobs[mb_inds]
