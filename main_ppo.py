@@ -27,8 +27,8 @@ def parse_args():
         help="seed of the experiment")
     parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="if toggled, `torch.backends.cudnn.deterministic=False`")
-    parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="if toggled, cuda will be enabled by default")
+    parser.add_argument("--cuda", type=int, default=0,
+        help="cuda will be enabled (run on cuda:0) by default, set to -1 to run on CPU, specify a positive int to run on a specific GPU")
     parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="if toggled, this experiment will be tracked with Weights and Biases")
     parser.add_argument("--wandb-project-name", type=str, default="hyperppo",
@@ -66,7 +66,7 @@ def parse_args():
         help="Toggles advantages normalization")
     parser.add_argument("--clip-coef", type=float, default=0.2,
         help="the surrogate clipping coefficient")
-    parser.add_argument("--clip-vloss", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--clip-vloss", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Toggles whether or not to use a clipped loss for the value function, as per the paper.")
     parser.add_argument("--ent-coef", type=float, default=0.0,
         help="coefficient of the entropy")
@@ -127,7 +127,7 @@ class Agent(nn.Module):
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256,512]), meta_batch_size = 8, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = 8, device=device)
             self.actor_mean.change_graph()
         
         else:
@@ -198,6 +198,8 @@ if __name__ == "__main__":
         tags = []
         if args.hyper:
             tags.append("hyper")
+        else:
+            tags.append("vanilla")            
         if args.debug:
             tags.append("debug")                
         if args.wandb_tag:
@@ -224,7 +226,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() and (args.cuda != -1) else "cpu")
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
@@ -322,6 +324,10 @@ if __name__ == "__main__":
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
+            if args.hyper:
+                policy_shapes[step] = agent.actor_mean.arch_per_state_dim
+                policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
+                policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim            
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
@@ -349,29 +355,35 @@ if __name__ == "__main__":
                 print(f"global_step={global_step}, episodic_return={rewards[:step+1,:].mean()}")
                 writer.add_scalar("charts/episodic_return", rewards[:step+1,:].mean(), global_step)
 
-
-        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
+        
+        if args.hyper:
+            final_policy_shape = agent.actor_mean.arch_per_state_dim
+            final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
+            final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
+        
+        
+        # test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
 
 	
-        if args.hyper:
-            for i in range(len(list_of_test_arch_indices)):
-                print(f"test reward_{i}:", test_reward[i])
-                writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
-        print("test reward:", test_reward.mean())
-        writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
+        # if args.hyper:
+        #     for i in range(len(list_of_test_arch_indices)):
+        #         print(f"test reward_{i}:", test_reward[i])
+        #         writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
+        # print("test reward:", test_reward.mean())
+        # writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
 
 
-        # change the hyper network current model
-        if args.hyper:
-            agent.actor_mean.change_graph()
+        # # change the hyper network current model
+        # if args.hyper:
+        #     agent.actor_mean.change_graph()
 
         # bootstrap value if not done
         with torch.no_grad():
             next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            for t in reversed(range(args.num_steps)):
-                if t == args.num_steps - 1:
+            for t in reversed(range(step + 1)):
+                if t == step:
                     nextnonterminal = 1.0 - next_done
                     nextvalues = next_value
                 else:
@@ -382,20 +394,30 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
+        b_obs = obs[:step+1].reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs[:step+1].reshape(-1)
+        b_actions = actions[:step+1].reshape((-1,) + envs.single_action_space.shape)
+        b_advantages = advantages[:step+1].reshape(-1)
+        b_returns = returns[:step+1].reshape(-1)
+        b_values = values[:step+1].reshape(-1)
+
+	
+        if args.hyper:
+            b_policy_shapes = policy_shapes[:step+1].reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds[:step+1].reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_indices = policy_indices[:step+1].reshape(-1)
 
         # Optimizing the policy and value network
-        b_inds = np.arange(args.batch_size)
+        batch_size = int(args.num_envs * (step + 1))
+        minibatch_size = int(batch_size  // args.num_minibatches)
+        # make minibatch_size multiple of 8 (meta_batch_size)
+        minibatch_size = minibatch_size - minibatch_size % 8
+        b_inds = np.arange(batch_size)
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
-            for start in range(0, args.batch_size, args.minibatch_size):
-                end = start + args.minibatch_size
+            for start in range(0, batch_size, minibatch_size):
+                end = start + minibatch_size
                 mb_inds = b_inds[start:end]
 
                 if args.hyper:
@@ -463,19 +485,19 @@ if __name__ == "__main__":
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-        # test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
+        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
 
 	
-        # if args.hyper:
-        #     for i in range(len(list_of_test_arch_indices)):
-        #         print(f"test reward_{i}:", test_reward[i])
-        #         writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
-        # print("test reward:", test_reward.mean())
-        # writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
+        if args.hyper:
+            for i in range(len(list_of_test_arch_indices)):
+                print(f"test reward_{i}:", test_reward[i])
+                writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
+        print("test reward:", test_reward.mean())
+        writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
 
         # change the hyper network current model
-        # if args.hyper:
-        #     agent.actor_mean.change_graph()
+        if args.hyper:
+            agent.actor_mean.change_graph()
         print("------------------------------------------------------------")
 
     envs.close()
