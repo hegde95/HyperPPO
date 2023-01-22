@@ -94,28 +94,43 @@ class hyperActor(nn.Module):
         # self.max_log_std = 0
         # self.act_limit = act_limit
 
-    def set_graph(self, graph):
-        # graph has to be list of list of layer, eg [[32,16,8],[4,128,4]]
-        size = len(graph)
-        shape_inds = []
-        self.current_model = []
-        self.param_counts = []
-        self.capacities = []
-        for i in range(size):
-            shape_ind = [torch.tensor(0).to(self.device)]
-            for j in range(len(graph[i])):
-                shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
-                shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
-            shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
-            shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
-            shape_ind = torch.stack(shape_ind).view(-1,1)
-            shape_inds.append(shape_ind)
-            self.current_model.append(MlpNetwork(fc_layers=graph[i], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim))
-            self.param_counts.append(self.get_params(graph[i]))
-            # self.capacities.append(get_capacity(graph[i], self.obs_dim, self.act_dim))
-        self.list_of_sampled_shape_inds = shape_inds
-        self.sampled_shape_inds = torch.cat(shape_inds)
+    # def set_graph(self, graph):
+    #     # graph has to be list of list of layer, eg [[32,16,8],[4,128,4]]
+    #     size = len(graph)
+    #     shape_inds = []
+    #     self.current_model = []
+    #     self.param_counts = []
+    #     self.capacities = []
+    #     for i in range(size):
+    #         shape_ind = [torch.tensor(0).to(self.device)]
+    #         for j in range(len(graph[i])):
+    #             shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
+    #             shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
+    #         shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
+    #         shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
+    #         shape_ind = torch.stack(shape_ind).view(-1,1)
+    #         shape_inds.append(shape_ind)
+    #         self.current_model.append(MlpNetwork(fc_layers=graph[i], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim))
+    #         self.param_counts.append(self.get_params(graph[i]))
+    #         # self.capacities.append(get_capacity(graph[i], self.obs_dim, self.act_dim))
+    #     self.list_of_sampled_shape_inds = shape_inds
+    #     self.sampled_shape_inds = torch.cat(shape_inds)
+    #     _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+
+    def set_graph(self, indices_vector, shape_ind_vec):
+        # self.shape_ind_per_state_dim = shape_ind_vec
+        self.sampled_indices = indices_vector
+        self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
+        # self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
+        # self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]
+        # self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)           
+        # self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
+        # self.current_model = [MlpNetwork(fc_layers=arc[arc!=0].astype(int), inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for arc in shape_vec.cpu().numpy()]
+        self.current_model = [self.all_models[i] for i in self.sampled_indices]
         _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        # self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
+        # self.current_archs = shape_vec
+
 
     def get_params(self, net):
         ct = 0

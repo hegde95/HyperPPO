@@ -158,6 +158,36 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
+    def get_mean_action(self,x):
+        if self.hyper:
+            action_mean, _ = self.actor_mean(x, track = False)
+        else:
+            action_mean = self.actor_mean(x)
+        
+        return action_mean
+        
+def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None):
+    test_rewards = np.zeros((num_episodes, envs.num_envs))
+    if args.hyper:
+        # agent.actor_mean.change_graph()
+        agent.actor_mean.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
+    for ep in range(num_episodes):
+        obs = envs.reset()
+        done = [False for _ in range(envs.num_envs)]
+        # episode_reward = np.zeros(envs.num_envs)
+        for step in range(max_steps):
+            obs = torch.FloatTensor(obs).to(device)
+            action = agent.get_mean_action(obs)
+            action = action.detach().cpu().numpy()
+            obs, reward, done, info = envs.step(action)
+            # episode_reward += reward
+            # test_rewards[ep] += reward
+            if all(done):
+                break
+        test_rewards[ep] = np.array([info['episode'][k]['r'] for k in range(envs.num_envs)])
+        # test_rewards.append(episode_reward)
+    return test_rewards.mean(0)
+
 
 if __name__ == "__main__":
     args = parse_args()
@@ -200,6 +230,9 @@ if __name__ == "__main__":
     envs = gym.vector.SyncVectorEnv(
         [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
     )
+    test_envs = gym.vector.SyncVectorEnv(
+        [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8)]
+    )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs, args.hyper).to(device)
@@ -231,6 +264,10 @@ if __name__ == "__main__":
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    if args.hyper:
+        policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
+        policy_shape_inds = -1 + torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
+        policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -239,8 +276,33 @@ if __name__ == "__main__":
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
 
-    # if args.hyper:
-    #     agent.actor_mean.change_graph()
+	
+    # set test architectures as:
+    # 0. [4, 4]
+    # 1. [8, 8, 8]
+    # 2. [16]
+    # 3. [16, 16, 16]
+    # 4. [32, 32, 32]
+    # 5. [64, 64, 64, 64]
+    # 6. [128, 128, 128, 128]
+    # 7. [256, 256, 256, 256]
+    if args.hyper:
+        list_of_test_archs = [
+            [4, 4],
+            [8, 8, 8],
+            [16],
+            [16, 16, 16],
+            [32, 32, 32],
+            [64, 64, 64, 64],
+            [128, 128, 128, 128],
+            [256, 256, 256, 256],
+        ]
+        list_of_test_arch_indices = [[i for i,arc in enumerate(agent.actor_mean.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
+        list_of_test_shape_inds = torch.stack([agent.actor_mean.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
+    else:
+        list_of_test_arch_indices = None
+        list_of_test_shape_inds = None
+        
 
     for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
@@ -274,9 +336,6 @@ if __name__ == "__main__":
                 writer.add_scalar("charts/episodic_return", avg_ep_reward, global_step)
                 writer.add_scalar("charts/episodic_length", avg_ep_length, global_step)
 
-                # change the hyper network current model
-                if args.hyper:
-                    agent.actor_mean.change_graph()
 
                 break
 
@@ -289,6 +348,22 @@ if __name__ == "__main__":
             elif done.any():
                 print(f"global_step={global_step}, episodic_return={rewards[:step+1,:].mean()}")
                 writer.add_scalar("charts/episodic_return", rewards[:step+1,:].mean(), global_step)
+
+
+        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
+
+	
+        if args.hyper:
+            for i in range(len(list_of_test_arch_indices)):
+                print(f"test reward_{i}:", test_reward[i])
+                writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
+        print("test reward:", test_reward.mean())
+        writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
+
+
+        # change the hyper network current model
+        if args.hyper:
+            agent.actor_mean.change_graph()
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -387,6 +462,21 @@ if __name__ == "__main__":
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+        # test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
+
+	
+        # if args.hyper:
+        #     for i in range(len(list_of_test_arch_indices)):
+        #         print(f"test reward_{i}:", test_reward[i])
+        #         writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
+        # print("test reward:", test_reward.mean())
+        # writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
+
+        # change the hyper network current model
+        # if args.hyper:
+        #     agent.actor_mean.change_graph()
+        print("------------------------------------------------------------")
 
     envs.close()
     writer.close()
