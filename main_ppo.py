@@ -40,6 +40,8 @@ def parse_args():
 
     parser.add_argument("--hyper", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Use a Hyper network")
+    parser.add_argument("--meta_batch_size", type=int, default=8,
+        help="the number of meta batch size")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
@@ -116,7 +118,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class Agent(nn.Module):
-    def __init__(self, envs, hyper = False):
+    def __init__(self, envs, hyper = False, meta_batch_size = 8):
         super().__init__()
         self.hyper = hyper
         self.critic = nn.Sequential(
@@ -127,7 +129,7 @@ class Agent(nn.Module):
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = 8, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = meta_batch_size, device=device)
             self.actor_mean.change_graph()
         
         else:
@@ -237,7 +239,7 @@ if __name__ == "__main__":
     )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = Agent(envs, args.hyper).to(device)
+    agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size).to(device)
     if args.hyper:
         optimizer = torch.optim.Adam([
             {
@@ -420,11 +422,18 @@ if __name__ == "__main__":
                 end = start + minibatch_size
                 mb_inds = b_inds[start:end]
 
+                mb_obs = b_obs[mb_inds]
+                mb_logprobs = b_logprobs[mb_inds]
+                mb_actions = b_actions[mb_inds]
+                mb_advantages = b_advantages[mb_inds]
+                mb_returns = b_returns[mb_inds]
+                mb_values = b_values[mb_inds]                
+
                 if args.hyper:
                     agent.actor_mean.change_graph(repeat_sample = True)
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
-                logratio = newlogprob - b_logprobs[mb_inds]
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
+                logratio = newlogprob - mb_logprobs
                 ratio = logratio.exp()
 
                 with torch.no_grad():
@@ -433,7 +442,7 @@ if __name__ == "__main__":
                     approx_kl = ((ratio - 1) - logratio).mean()
                     clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
 
-                mb_advantages = b_advantages[mb_inds]
+                mb_advantages = mb_advantages
                 if args.norm_adv:
                     mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
@@ -445,17 +454,17 @@ if __name__ == "__main__":
                 # Value loss
                 newvalue = newvalue.view(-1)
                 if args.clip_vloss:
-                    v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-                    v_clipped = b_values[mb_inds] + torch.clamp(
-                        newvalue - b_values[mb_inds],
+                    v_loss_unclipped = (newvalue - mb_returns) ** 2
+                    v_clipped = mb_values + torch.clamp(
+                        newvalue - mb_values,
                         -args.clip_coef,
                         args.clip_coef,
                     )
-                    v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+                    v_loss_clipped = (v_clipped - mb_returns) ** 2
                     v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
                     v_loss = 0.5 * v_loss_max.mean()
                 else:
-                    v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
+                    v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
 
                 entropy_loss = entropy.mean()
                 loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
