@@ -44,6 +44,8 @@ def parse_args():
         help="the number of meta batch size")
     parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Enable architecture mixing")
+    parser.add_argument("--arch_conditional_critic", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+        help="Enable architecture conditional critic")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
@@ -120,19 +122,22 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class Agent(nn.Module):
-    def __init__(self, envs, hyper = False, meta_batch_size = 8):
+    def __init__(self, envs, hyper = False, meta_batch_size = 8, arch_conditional_critic = False):
         super().__init__()
         self.hyper = hyper
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
-        )
+        self.arch_conditional_critic = arch_conditional_critic
+
         if self.hyper:
             self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = meta_batch_size, device=device)
             self.actor_mean.change_graph()
+
+            self.critic = nn.Sequential(
+                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod() + arch_conditional_critic*self.actor_mean.arch_max_len, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 1), std=1.0),
+            )            
         
         else:
             self.actor_mean = nn.Sequential(
@@ -144,23 +149,39 @@ class Agent(nn.Module):
                 nn.ReLU(),                
                 layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
             )
+            self.critic = nn.Sequential(
+                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 1), std=1.0),
+            )            
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
     def get_value(self, x):
-        return self.critic(x)
+        if self.hyper and self.arch_conditional_critic:
+            return self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
+        else:
+            return self.critic(x)
 
     def get_action_and_value(self, x, action=None):
         if self.hyper:
             action_mean, _ = self.actor_mean(x)
+            if self.arch_conditional_critic:
+                value = self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
+            else:
+                value = self.critic(x)
         else:
             action_mean = self.actor_mean(x)
+            value = self.critic(x)
 
         action_logstd = self.actor_logstd.expand_as(action_mean)
         action_std = torch.exp(action_logstd)
         probs = Normal(action_mean, action_std)
         if action is None:
             action = probs.sample()
-        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+
+        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), value
 
     def get_mean_action(self,x):
         if self.hyper:
@@ -241,7 +262,7 @@ if __name__ == "__main__":
     )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size).to(device)
+    agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic).to(device)
     if args.hyper:
         optimizer = torch.optim.Adam([
             {
