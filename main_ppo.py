@@ -42,6 +42,8 @@ def parse_args():
         help="Use a Hyper network")
     parser.add_argument("--meta_batch_size", type=int, default=8,
         help="the number of meta batch size")
+    parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+        help="Enable architecture mixing")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
@@ -396,38 +398,51 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs[:step+1].reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs[:step+1].reshape(-1)
-        b_actions = actions[:step+1].reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages[:step+1].reshape(-1)
-        b_returns = returns[:step+1].reshape(-1)
-        b_values = values[:step+1].reshape(-1)
+        b_obs = obs[:step+1].swapaxes(0,1).reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs[:step+1].swapaxes(0,1).reshape(-1)
+        b_actions = actions[:step+1].swapaxes(0,1).reshape((-1,) + envs.single_action_space.shape)
+        b_advantages = advantages[:step+1].swapaxes(0,1).reshape(-1)
+        b_returns = returns[:step+1].swapaxes(0,1).reshape(-1)
+        b_values = values[:step+1].swapaxes(0,1).reshape(-1)
 
 	
         if args.hyper:
-            b_policy_shapes = policy_shapes[:step+1].reshape((-1,agent.actor_mean.arch_max_len))
-            b_policy_shape_inds = policy_shape_inds[:step+1].reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
             b_policy_indices = policy_indices[:step+1].reshape(-1)
 
+            num_envs_per_arch = int(args.num_envs / args.meta_batch_size)
+
         # Optimizing the policy and value network
-        batch_size = int(args.num_envs * (step + 1))
+        if args.hyper and not args.enable_arch_mixing:
+            batch_size = int(num_envs_per_arch * (step + 1))
+        else:
+            batch_size = int(args.num_envs * (step + 1))
         minibatch_size = int(batch_size  // args.num_minibatches)
-        # make minibatch_size multiple of 8 (meta_batch_size)
-        minibatch_size = minibatch_size - minibatch_size % 8
+        # make minibatch_size multiple of (meta_batch_size)
+        minibatch_size = minibatch_size - minibatch_size % args.meta_batch_size
         b_inds = np.arange(batch_size)
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
             for start in range(0, batch_size, minibatch_size):
                 end = start + minibatch_size
-                mb_inds = b_inds[start:end]
+                if args.hyper and not args.enable_arch_mixing:
+                    mb_inds = np.concatenate([b_inds[start:end] + k*batch_size for k in range(8)])
+                else:
+                    mb_inds = b_inds[start:end]
 
                 mb_obs = b_obs[mb_inds]
                 mb_logprobs = b_logprobs[mb_inds]
                 mb_actions = b_actions[mb_inds]
                 mb_advantages = b_advantages[mb_inds]
                 mb_returns = b_returns[mb_inds]
-                mb_values = b_values[mb_inds]                
+                mb_values = b_values[mb_inds] 
+
+                if args.hyper:
+                    mb_policy_shapes = b_policy_shapes[mb_inds]
+                    mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
+                    mb_policy_indices = b_policy_indices[mb_inds]               
 
                 if args.hyper:
                     agent.actor_mean.change_graph(repeat_sample = True)
@@ -491,8 +506,6 @@ if __name__ == "__main__":
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
-        print("SPS:", int(global_step / (time.time() - start_time)))
-        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
         test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
 
@@ -507,6 +520,9 @@ if __name__ == "__main__":
         # change the hyper network current model
         if args.hyper:
             agent.actor_mean.change_graph()
+        
+        print("SPS:", int(global_step / (time.time() - start_time)))
+        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
         print("------------------------------------------------------------")
 
     envs.close()
