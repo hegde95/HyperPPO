@@ -254,10 +254,10 @@ if __name__ == "__main__":
     device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() and (args.cuda != -1) else "cpu")
 
     # env setup
-    envs = gym.vector.SyncVectorEnv(
+    envs = gym.vector.AsyncVectorEnv(
         [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
     )
-    test_envs = gym.vector.SyncVectorEnv(
+    test_envs = gym.vector.AsyncVectorEnv(
         [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8*3)]
     )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
@@ -532,7 +532,7 @@ if __name__ == "__main__":
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
 
-        test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
+        test_reward = test_agent(test_envs, agent, device, num_episodes=3, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
 
 	
         if args.hyper:
