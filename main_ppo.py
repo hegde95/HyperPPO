@@ -449,7 +449,7 @@ if __name__ == "__main__":
             for start in range(0, batch_size, minibatch_size):
                 end = start + minibatch_size
                 if args.hyper and not args.enable_arch_mixing:
-                    mb_inds = np.concatenate([b_inds[start:end] + k*batch_size for k in range(8)])
+                    mb_inds = np.concatenate([b_inds[start:end] + k*batch_size for k in range(args.meta_batch_size)])
                 else:
                     mb_inds = b_inds[start:end]
 
