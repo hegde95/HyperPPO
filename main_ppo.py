@@ -177,7 +177,10 @@ class Agent(nn.Module):
 
     def get_value(self, x):
         if self.hyper and self.arch_conditional_critic:
-            return self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
+            if self.dual_critic:
+                return (self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1)), self.critic2(x))
+            else:
+                return self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
         else:
             return self.critic(x)
 
@@ -288,7 +291,8 @@ if __name__ == "__main__":
 
     agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
     if args.hyper:
-        optimizer = torch.optim.Adam([
+        # optimizer = torch.optim.Adam([
+        param_list = [
             {
                 'params':agent.actor_mean.ghn.parameters(),
                 'lr' :args.learning_rate, 
@@ -303,7 +307,13 @@ if __name__ == "__main__":
                 'params':agent.critic.parameters(),
                 'lr' :args.learning_rate,
             },
-        ])
+        ]
+        if args.dual_critic:
+            param_list.append({
+                'params':agent.critic2.parameters(),
+                'lr' :args.learning_rate,
+            })
+        optimizer = torch.optim.Adam(param_list, lr=args.learning_rate, eps=1e-5)
         
     else:
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
@@ -436,19 +446,37 @@ if __name__ == "__main__":
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
+            if args.dual_critic:
+                advantages2 = torch.zeros_like(rewards).to(device)
+                lastgaelam2 = 0
+
+                next_value, next_value2 = agent.get_value(next_obs)
+                next_value = next_value.reshape(1, -1)
+                next_value2 = next_value2.reshape(1, -1)
+            else:
+                next_value = agent.get_value(next_obs).reshape(1, -1)
             for t in reversed(range(step + 1)):
                 if t == step:
                     nextnonterminal = 1.0 - next_done
                     nextvalues = next_value
+                    if args.dual_critic:
+                        nextvalues2 = next_value2
                 else:
                     nextnonterminal = 1.0 - dones[t + 1]
                     nextvalues = values[t + 1]
+                    if args.dual_critic:
+                        nextvalues2 = values2[t + 1]
                 delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+                if args.dual_critic:
+                    delta2 = rewards[t] + args.gamma * nextvalues2 * nextnonterminal - values2[t]
+                    advantages2[t] = lastgaelam2 = delta2 + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam2
+                    
             returns = advantages + values
+            if args.dual_critic:
+                returns2 = advantages2 + values2
 
         # flatten the batch
         b_obs = obs[:step+1].swapaxes(0,1).reshape((-1,) + envs.single_observation_space.shape)
@@ -463,6 +491,12 @@ if __name__ == "__main__":
             b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
             b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
             b_policy_indices = policy_indices[:step+1].reshape(-1)
+
+            if args.dual_critic:
+                b_advantages2 = advantages2[:step+1].swapaxes(0,1).reshape(-1)
+                b_returns2 = returns2[:step+1].swapaxes(0,1).reshape(-1)
+                b_values2 = values2[:step+1].swapaxes(0,1).reshape(-1)
+
 
             num_envs_per_arch = int(args.num_envs / args.meta_batch_size)
 
@@ -495,12 +529,20 @@ if __name__ == "__main__":
                 if args.hyper:
                     mb_policy_shapes = b_policy_shapes[mb_inds]
                     mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
-                    mb_policy_indices = b_policy_indices[mb_inds]               
+                    mb_policy_indices = b_policy_indices[mb_inds] 
+
+                    if args.dual_critic:
+                        mb_advantages2 = b_advantages2[mb_inds]
+                        mb_returns2 = b_returns2[mb_inds]
+                        mb_values2 = b_values2[mb_inds]
 
                 if args.hyper:
                     agent.actor_mean.change_graph(repeat_sample = True)
 
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
+                
+                if args.hyper and args.dual_critic:
+                    newvalue, newvalue2 = newvalue
 
                 # if args.hyper:
                 #     assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes).all(), "arch_per_state_dim != mb_policy_shapes"
@@ -517,11 +559,22 @@ if __name__ == "__main__":
                 # mb_advantages = mb_advantages
                 if args.norm_adv:
                     mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                    if args.dual_critic:
+                        mb_advantages2 = (mb_advantages2 - mb_advantages2.mean()) / (mb_advantages2.std() + 1e-8)
 
                 # Policy loss
                 pg_loss1 = -mb_advantages * ratio
                 pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+
+                if args.dual_critic:
+                    pg_loss2_1 = -mb_advantages2 * ratio
+                    pg_loss2_2 = -mb_advantages2 * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                    pg_loss2 = torch.max(pg_loss2_1, pg_loss2_2).mean()
+
+                    pg_loss_total = pg_loss + pg_loss2
+                else:
+                    pg_loss_total = pg_loss
 
                 # Value loss
                 newvalue = newvalue.view(-1)
@@ -538,8 +591,27 @@ if __name__ == "__main__":
                 else:
                     v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
 
+                if args.dual_critic:
+                    newvalue2 = newvalue2.view(-1)
+                    if args.clip_vloss:
+                        v_loss_unclipped2 = (newvalue2 - mb_returns2) ** 2
+                        v_clipped2 = mb_values2 + torch.clamp(
+                            newvalue2 - mb_values2,
+                            -args.clip_coef,
+                            args.clip_coef,
+                        )
+                        v_loss_clipped2 = (v_clipped2 - mb_returns2) ** 2
+                        v_loss_max2 = torch.max(v_loss_unclipped2, v_loss_clipped2)
+                        v_loss2 = 0.5 * v_loss_max2.mean()
+                    else:
+                        v_loss2 = 0.5 * ((newvalue2 - mb_returns2) ** 2).mean()
+
+                    v_loss_total = v_loss + v_loss2
+                else:
+                    v_loss_total = v_loss
+
                 entropy_loss = entropy.mean()
-                loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
+                loss = pg_loss_total - args.ent_coef * entropy_loss + v_loss_total * args.vf_coef
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -554,20 +626,36 @@ if __name__ == "__main__":
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
+        if args.hyper and args.dual_critic:
+            y_pred2, y_true2 = b_values2.cpu().numpy(), b_returns2.cpu().numpy()
+            var_y2 = np.var(y_true2)
+            explained_var2 = np.nan if var_y2 == 0 else 1 - np.var(y_true2 - y_pred2) / var_y2
+
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-        writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-        writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+        if args.hyper and args.dual_critic:
+            writer.add_scalar("losses/value_loss1", v_loss.item(), global_step)
+            writer.add_scalar("losses/value_loss2", v_loss2.item(), global_step)
+
+            writer.add_scalar("losses/policy_loss1", pg_loss.item(), global_step)
+            writer.add_scalar("losses/policy_loss2", pg_loss2.item(), global_step)
+
+        writer.add_scalar("losses/value_loss", v_loss_total.item(), global_step)
+        writer.add_scalar("losses/policy_loss", pg_loss_total.item(), global_step)
+
         writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
         writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
+        if args.hyper and args.dual_critic:
+            writer.add_scalar("losses/explained_variance2", explained_var2, global_step)
 
         test_reward = test_agent(test_envs, agent, device, num_episodes=3, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
 
 	
-        if args.hyper:
+        if args.hyper:              
             for i in range(len(list_of_test_arch_indices)):
                 print(f"test reward_{i}:", test_reward[i])
                 writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
