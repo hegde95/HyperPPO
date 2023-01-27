@@ -469,6 +469,10 @@ if __name__ == "__main__":
                     agent.actor_mean.change_graph(repeat_sample = True)
 
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
+
+                # if args.hyper:
+                #     assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes).all(), "arch_per_state_dim != mb_policy_shapes"
+                
                 logratio = newlogprob - mb_logprobs
                 ratio = logratio.exp()
 
@@ -478,7 +482,7 @@ if __name__ == "__main__":
                     approx_kl = ((ratio - 1) - logratio).mean()
                     clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
 
-                mb_advantages = mb_advantages
+                # mb_advantages = mb_advantages
                 if args.norm_adv:
                     mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
@@ -540,7 +544,7 @@ if __name__ == "__main__":
 
         # change the hyper network current model
         if args.hyper:
-            agent.actor_mean.change_graph()
+            agent.actor_mean.change_graph(repeat_sample=True)
         
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
