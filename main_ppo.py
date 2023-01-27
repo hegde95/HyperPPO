@@ -50,7 +50,7 @@ def parse_args():
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
         help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=16_000_000,
+    parser.add_argument("--total-timesteps", type=int, default=32_000_000,
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=3e-4,
         help="the learning rate of the optimizer")
@@ -211,7 +211,7 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
                 break
         test_rewards[ep] = np.array([info['episode'][k]['r'] for k in range(envs.num_envs)])
         # test_rewards.append(episode_reward)
-    return test_rewards.mean(0)
+    return test_rewards.mean(0).reshape(8,-1).mean(1)
 
 
 if __name__ == "__main__":
@@ -258,7 +258,7 @@ if __name__ == "__main__":
         [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
     )
     test_envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8)]
+        [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8*3)]
     )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
