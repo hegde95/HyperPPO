@@ -186,6 +186,10 @@ class Agent(nn.Module):
             action_mean, actor_logstd = self.actor_mean(x)
             if self.arch_conditional_critic:
                 value = self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
+
+                if self.dual_critic:
+                    value2 = self.critic2(x)
+                    value = (value, value2)
             else:
                 value = self.critic(x)
         else:
@@ -282,7 +286,7 @@ if __name__ == "__main__":
     )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic).to(device)
+    agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
     if args.hyper:
         optimizer = torch.optim.Adam([
             {
@@ -315,6 +319,9 @@ if __name__ == "__main__":
         policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
         policy_shape_inds = -1 + torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
         policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
+
+        if args.dual_critic:
+            values2 = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -366,7 +373,12 @@ if __name__ == "__main__":
             # ALGO LOGIC: action logic
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
-                values[step] = value.flatten()
+                if args.dual_critic:
+                    value,value2 = value
+                    values[step] = value.flatten()
+                    values2[step] = value2.flatten()
+                else:
+                    values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
             if args.hyper:
