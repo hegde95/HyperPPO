@@ -1,10 +1,16 @@
+# code built on top of https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
+import warnings
+# ignore UserWarnings and DeprecationWarnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
+
 import argparse
 import os
 import random
 import time
 from distutils.util import strtobool
+import json
 
 import gym
 import numpy as np
@@ -16,6 +22,7 @@ from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 # from lib.Model import ActorCritic, HyperActorCritic
 from hyper.core import hyperActor
+import glob
 
 
 def parse_args():
@@ -38,13 +45,13 @@ def parse_args():
     parser.add_argument("--capture-video", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to capture videos of the agent performances (check out `videos` folder)")
 
-    parser.add_argument("--hyper", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+    parser.add_argument("--hyper", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Use a Hyper network")
     parser.add_argument("--meta_batch_size", type=int, default=8,
         help="the number of meta batch size")
-    parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable architecture mixing")
-    parser.add_argument("--arch_conditional_critic", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+    parser.add_argument("--arch_conditional_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Enable architecture conditional critic")
     parser.add_argument("--dual_critic", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable dual critic")
@@ -91,6 +98,10 @@ def parse_args():
         help='Use a custom tag for wandb. (default: "")')   
     parser.add_argument("--debug", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Run in debug mode")     
+    parser.add_argument("--save-interval", type=int, default=1,
+        help="Save interval")
+    parser.add_argument("--run-name", type=str, default=None,
+        help="Run name")
                                  
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
@@ -217,6 +228,20 @@ class Agent(nn.Module):
             action_mean = self.actor_mean(x)
         
         return action_mean
+
+    def save_model(self, save_dir, epoch):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        if epoch == -1:
+            path = os.path.join(save_dir, 'model.pt')
+        else:
+            path = os.path.join(save_dir, 'model_epoch_{}.pt'.format(epoch))
+        torch.save(self.state_dict(), path)
+        print(f"Model saved to {path}")
+
+
+    def load_model(self, path):
+        self.load_state_dict(torch.load(path))
         
 def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None):
     test_rewards = np.zeros((num_episodes, envs.num_envs))
@@ -243,7 +268,32 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
 
 if __name__ == "__main__":
     args = parse_args()
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+
+    if args.run_name:
+        run_name = args.run_name
+
+        # load config json
+        with open(f"runs/{run_name}/config.json") as f:
+            config = json.load(f)
+            args = argparse.Namespace(**config)
+        
+        args.run_name = run_name
+        resume = True
+        print(f"Resuming run: {run_name}") 
+
+        with open(f"runs/{run_name}/stats.json") as f:
+            stats = json.load(f)
+
+        starting_update = stats["updates"]
+        global_step = stats["global_step"]
+
+    else:
+        run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+        resume = False
+        print(f"Starting a new run: {run_name}")
+        starting_update = 1
+        global_step = 0
+
     if args.track:
         import wandb
 
@@ -265,6 +315,7 @@ if __name__ == "__main__":
             name=run_name,
             monitor_gym=True,
             save_code=True,
+            resume=resume,
         )
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
@@ -318,6 +369,16 @@ if __name__ == "__main__":
     else:
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
+    if resume:
+        # agent.load_model(f"runs/{run_name}")
+        # get all saved models
+        model_files = glob.glob(f"runs/{run_name}/latest_model/*.pt")
+        # get the last saved model
+        model_file = sorted(model_files)[-1]
+        # load the model
+        agent.load_model(model_file)
+        optimizer.load_state_dict(torch.load(f"runs/{run_name}/optimizer.pt"))
+
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
@@ -334,7 +395,6 @@ if __name__ == "__main__":
             values2 = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
-    global_step = 0
     start_time = time.time()
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -368,7 +428,7 @@ if __name__ == "__main__":
         list_of_test_shape_inds = None
         
 
-    for update in range(1, num_updates + 1):
+    for update in range(starting_update, num_updates + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
@@ -668,7 +728,25 @@ if __name__ == "__main__":
         
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+        agent.save_model(os.path.join('runs', run_name, 'latest_model'), -1)
+        # save optimizer
+        torch.save(optimizer.state_dict(), os.path.join(os.path.join('runs', run_name), "optimizer.pt"))
+        # save args as a config file
+        with open(os.path.join('runs', run_name, f"config.json"), "w") as f:
+            json.dump(vars(args), f, indent=2)
+
+        with open(os.path.join('runs', run_name, f"stats.json"), "w") as f:
+            json.dump({"updates":update, "global_step":global_step}, f, indent=2)
+
+
+
+        if  update % args.save_interval == 0:
+            agent.save_model(os.path.join('runs', run_name, 'checkpoints'), update)
+            
+
         print("------------------------------------------------------------")
+
 
     envs.close()
     writer.close()
