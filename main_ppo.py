@@ -98,7 +98,7 @@ def parse_args():
         help='Use a custom tag for wandb. (default: "")')   
     parser.add_argument("--debug", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Run in debug mode")     
-    parser.add_argument("--save-interval", type=int, default=1,
+    parser.add_argument("--save-interval", type=int, default=25,
         help="Save interval")
     parser.add_argument("--run-name", type=str, default=None,
         help="Run name")
@@ -286,6 +286,8 @@ if __name__ == "__main__":
 
         starting_update = stats["updates"]
         global_step = stats["global_step"]
+        if args.track:
+            wandb_id = stats["wandb_id"]
 
     else:
         run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
@@ -293,6 +295,9 @@ if __name__ == "__main__":
         print(f"Starting a new run: {run_name}")
         starting_update = 1
         global_step = 0
+        if args.track:
+            import wandb
+            wandb_id = wandb.util.generate_id()
 
     if args.track:
         import wandb
@@ -315,7 +320,8 @@ if __name__ == "__main__":
             name=run_name,
             monitor_gym=True,
             save_code=True,
-            resume=resume,
+            id=wandb_id,
+            resume="allow",
         )
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
@@ -737,7 +743,11 @@ if __name__ == "__main__":
             json.dump(vars(args), f, indent=2)
 
         with open(os.path.join('runs', run_name, f"stats.json"), "w") as f:
-            json.dump({"updates":update, "global_step":global_step}, f, indent=2)
+            json.dump({
+                "updates":update, 
+                "global_step":global_step,
+                "wandb_id":wandb_id if args.track else None,
+                }, f, indent=2)
 
 
 
