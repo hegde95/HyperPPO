@@ -53,7 +53,7 @@ def parse_args():
         help="Enable architecture mixing")
     parser.add_argument("--arch_conditional_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Enable architecture conditional critic")
-    parser.add_argument("--dual_critic", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+    parser.add_argument("--dual_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Enable dual critic")
     parser.add_argument("--state_conditioned_std", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable state conditioned std")
