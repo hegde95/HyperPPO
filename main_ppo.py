@@ -631,16 +631,17 @@ if __name__ == "__main__":
                 # Policy loss
                 pg_loss1 = -mb_advantages * ratio
                 pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                pg_loss = torch.max(pg_loss1, pg_loss2)
 
                 if args.dual_critic:
                     pg_loss2_1 = -mb_advantages2 * ratio
                     pg_loss2_2 = -mb_advantages2 * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                    pg_loss2 = torch.max(pg_loss2_1, pg_loss2_2).mean()
+                    pg_loss2 = torch.max(pg_loss2_1, pg_loss2_2)
 
-                    pg_loss_total = pg_loss + pg_loss2
+                    # pg_loss_total = pg_loss.mean() + pg_loss2.mean()
+                    pg_loss_total = torch.max(pg_loss , pg_loss2).mean()
                 else:
-                    pg_loss_total = pg_loss
+                    pg_loss_total = pg_loss.mean()
 
                 # Value loss
                 newvalue = newvalue.view(-1)
@@ -653,9 +654,9 @@ if __name__ == "__main__":
                     )
                     v_loss_clipped = (v_clipped - mb_returns) ** 2
                     v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
+                    v_loss = 0.5 * v_loss_max
                 else:
-                    v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
+                    v_loss = 0.5 * ((newvalue - mb_returns) ** 2)
 
                 if args.dual_critic:
                     newvalue2 = newvalue2.view(-1)
@@ -668,13 +669,13 @@ if __name__ == "__main__":
                         )
                         v_loss_clipped2 = (v_clipped2 - mb_returns2) ** 2
                         v_loss_max2 = torch.max(v_loss_unclipped2, v_loss_clipped2)
-                        v_loss2 = 0.5 * v_loss_max2.mean()
+                        v_loss2 = 0.5 * v_loss_max2
                     else:
-                        v_loss2 = 0.5 * ((newvalue2 - mb_returns2) ** 2).mean()
+                        v_loss2 = 0.5 * ((newvalue2 - mb_returns2) ** 2)
 
-                    v_loss_total = v_loss + v_loss2
+                    v_loss_total = v_loss.mean() + v_loss2.mean()
                 else:
-                    v_loss_total = v_loss
+                    v_loss_total = v_loss.mean()
 
                 entropy_loss = entropy.mean()
                 loss = pg_loss_total - args.ent_coef * entropy_loss + v_loss_total * args.vf_coef
@@ -700,11 +701,11 @@ if __name__ == "__main__":
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         if args.hyper and args.dual_critic:
-            writer.add_scalar("losses/value_loss1", v_loss.item(), global_step)
-            writer.add_scalar("losses/value_loss2", v_loss2.item(), global_step)
+            writer.add_scalar("losses/value_loss1", v_loss.mean().item(), global_step)
+            writer.add_scalar("losses/value_loss2", v_loss2.mean().item(), global_step)
 
-            writer.add_scalar("losses/policy_loss1", pg_loss.item(), global_step)
-            writer.add_scalar("losses/policy_loss2", pg_loss2.item(), global_step)
+            writer.add_scalar("losses/policy_loss1", pg_loss.mean().item(), global_step)
+            writer.add_scalar("losses/policy_loss2", pg_loss2.mean().item(), global_step)
 
         writer.add_scalar("losses/value_loss", v_loss_total.item(), global_step)
         writer.add_scalar("losses/policy_loss", pg_loss_total.item(), global_step)
