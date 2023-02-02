@@ -639,7 +639,7 @@ if __name__ == "__main__":
                     pg_loss2 = torch.max(pg_loss2_1, pg_loss2_2)
 
                     # pg_loss_total = pg_loss.mean() + pg_loss2.mean()
-                    pg_loss_total = torch.max(pg_loss , pg_loss2).mean()
+                    pg_loss_total = torch.min(pg_loss , pg_loss2).mean()
                 else:
                     pg_loss_total = pg_loss.mean()
 
