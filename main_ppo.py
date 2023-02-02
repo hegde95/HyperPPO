@@ -657,7 +657,47 @@ if __name__ == "__main__":
                 else:
                     v_loss = 0.5 * ((newvalue - mb_returns) ** 2)
 
-                if args.dual_critic:
+                v_loss_total = v_loss.mean()
+
+                entropy_loss = entropy.mean()
+                loss = pg_loss_total - args.ent_coef * entropy_loss + v_loss_total * args.vf_coef
+
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                optimizer.step()
+
+            if args.target_kl is not None:
+                if approx_kl > args.target_kl:
+                    break
+
+        if args.hyper and args.dual_critic:
+            batch_size = int(args.num_envs * (step + 1))
+            minibatch_size = int(batch_size  // args.num_minibatches)
+            # make minibatch_size multiple of (meta_batch_size)
+            minibatch_size = minibatch_size - minibatch_size % args.meta_batch_size
+            b_inds = np.arange(batch_size)
+            for epoch in range(args.update_epochs):
+                np.random.shuffle(b_inds)
+                for start in range(0, batch_size, minibatch_size):
+                    end = start + minibatch_size
+                    mb_inds = b_inds[start:end]
+
+                    mb_obs = b_obs[mb_inds]
+                    mb_actions = b_actions[mb_inds]
+
+
+                    mb_returns2 = b_returns2[mb_inds]
+                    mb_values2 = b_values2[mb_inds]
+
+                    if args.hyper:
+                        agent.actor_mean.change_graph(repeat_sample = True)
+
+                    _, _, _, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
+                    
+                    newvalue, newvalue2 = newvalue
+
+
                     newvalue2 = newvalue2.view(-1)
                     if args.clip_vloss:
                         v_loss_unclipped2 = (newvalue2 - mb_returns2) ** 2
@@ -672,21 +712,12 @@ if __name__ == "__main__":
                     else:
                         v_loss2 = 0.5 * ((newvalue2 - mb_returns2) ** 2)
 
-                    v_loss_total = v_loss.mean() + v_loss2.mean()
-                else:
-                    v_loss_total = v_loss.mean()
+                    loss = v_loss2.mean()
 
-                entropy_loss = entropy.mean()
-                loss = pg_loss_total - args.ent_coef * entropy_loss + v_loss_total * args.vf_coef
-
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                optimizer.step()
-
-            if args.target_kl is not None:
-                if approx_kl > args.target_kl:
-                    break
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                    optimizer.step()
 
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)
