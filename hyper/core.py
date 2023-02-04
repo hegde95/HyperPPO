@@ -63,19 +63,19 @@ class hyperActor(nn.Module):
         #         [128, 128, 128],
         #         [256, 256, 256],                        
         #     ])
-        self.list_of_arcs.extend([
-                [4, 4],
-                [8, 8, 8],
-                [16],
-                [16, 16, 16],
-                [32, 32, 32],
-                [64, 64, 64, 64],
-                [128, 128, 128, 128],
-                [256, 256, 256, 256]
-            ])
+        # self.list_of_arcs.extend([
+        #         [4, 4],
+        #         [8, 8, 8],
+        #         [16],
+        #         [16, 16, 16],
+        #         [32, 32, 32],
+        #         [64, 64, 64, 64],
+        #         [128, 128, 128, 128],
+        #         [256, 256, 256, 256]
+        #     ])
         
-        # for k in range(1,5):
-        #     self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))
+        for k in range(1,5):
+            self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))
         
         # self.list_of_arcs = [(256,256,256) for i in range(1000)]
         

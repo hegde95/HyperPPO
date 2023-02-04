@@ -47,7 +47,7 @@ def parse_args():
 
     parser.add_argument("--hyper", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Use a Hyper network")
-    parser.add_argument("--meta_batch_size", type=int, default=8,
+    parser.add_argument("--meta_batch_size", type=int, default=64,
         help="the number of meta batch size")
     parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable architecture mixing")
@@ -61,7 +61,7 @@ def parse_args():
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
         help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=32_000_000,
+    parser.add_argument("--total-timesteps", type=int, default=256_000_000,
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=3e-4,
         help="the learning rate of the optimizer")
@@ -728,9 +728,6 @@ if __name__ == "__main__":
         print("test reward:", test_reward.mean())
         writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
 
-        # change the hyper network current model
-        if args.hyper:
-            agent.actor_mean.change_graph(repeat_sample=True)
         
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
@@ -754,6 +751,9 @@ if __name__ == "__main__":
         if  update % args.save_interval == 0:
             agent.save_model(os.path.join('runs', run_name, 'checkpoints'), update)
             
+        # change the hyper network current model
+        if args.hyper:
+            agent.actor_mean.change_graph(repeat_sample=False)
 
         print("------------------------------------------------------------")
 
