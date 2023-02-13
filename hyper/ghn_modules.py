@@ -131,7 +131,7 @@ class MLP_GHN(nn.Module):
         return ghn
 
 
-    def forward(self, nets_torch, return_embeddings=False, predict_class_layers=True, bn_train=True, shape_ind = None):
+    def forward(self, nets_torch, shape_ind = None, return_embeddings=False, predict_class_layers=True, bn_train=True):
         r"""
         Predict parameters for a list of >=1 networks.
         :param nets_torch: one network or a list of networks, each is based on nn.Module.
