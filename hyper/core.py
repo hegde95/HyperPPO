@@ -9,6 +9,8 @@ import numpy as np
 from itertools import product as cartesian_product
 import random
 from itertools import product
+from torch.nn.parallel.replicate import replicate
+from torch.nn.parallel.scatter_gather import gather
 
 class hyperActor(nn.Module):
 
@@ -115,60 +117,23 @@ class hyperActor(nn.Module):
         config['layernorm'] = True
         config['hid'] = 16
 
-        # config['decoder'] = 'mlp' #EXPERIMENTAL
-
         self.ghn_config = config
-
 
         self.ghn = MLP_GHN(**config,
                     debug_level=0, device=self.device).to(self.device)  
 
-        # self.optimizer = torch.optim.Adam(self.ghn.parameters(), 1e-3, weight_decay=1e-5)
-
-        # self.scheduler = MultiStepLR(self.optimizer, milestones=[200,250], gamma=0.1)
-
-        # self.log_std_logits = nn.Parameter(
-                    # torch.zeros(act_dim, requires_grad=True))
-        # self.min_log_std = -6
-        # self.max_log_std = 0
-        # self.act_limit = act_limit
-
-    # def set_graph(self, graph):
-    #     # graph has to be list of list of layer, eg [[32,16,8],[4,128,4]]
-    #     size = len(graph)
-    #     shape_inds = []
-    #     self.current_model = []
-    #     self.param_counts = []
-    #     self.capacities = []
-    #     for i in range(size):
-    #         shape_ind = [torch.tensor(0).to(self.device)]
-    #         for j in range(len(graph[i])):
-    #             shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
-    #             shape_ind.append(torch.tensor(graph[i][j]).type(torch.FloatTensor).to(self.device))
-    #         shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
-    #         shape_ind.append(torch.tensor((self.act_dim * 2)).to(self.device))
-    #         shape_ind = torch.stack(shape_ind).view(-1,1)
-    #         shape_inds.append(shape_ind)
-    #         self.current_model.append(MlpNetwork(fc_layers=graph[i], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim))
-    #         self.param_counts.append(self.get_params(graph[i]))
-    #         # self.capacities.append(get_capacity(graph[i], self.obs_dim, self.act_dim))
-    #     self.list_of_sampled_shape_inds = shape_inds
-    #     self.sampled_shape_inds = torch.cat(shape_inds)
-    #     _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        # get all torch devices
+        self.all_devices = [torch.device('cuda:{}'.format(i)) for i in range(torch.cuda.device_count())]
+        self.num_current_models_per_device = int(self.meta_batch_size / len(self.all_devices)) 
+        self.device_model_list = []
+        for device in self.all_devices:
+            self.device_model_list.extend([device for i in range(self.num_current_models_per_device)])
 
     def set_graph(self, indices_vector, shape_ind_vec):
-        # self.shape_ind_per_state_dim = shape_ind_vec
         self.sampled_indices = indices_vector
         self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
-        # self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
-        # self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]
-        # self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)           
-        # self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
-        # self.current_model = [MlpNetwork(fc_layers=arc[arc!=0].astype(int), inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for arc in shape_vec.cpu().numpy()]
         self.current_model = [self.all_models[i] for i in self.sampled_indices]
         _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
-        # self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
-        # self.current_archs = shape_vec
 
 
     def get_params(self, net):
@@ -185,7 +150,7 @@ class hyperActor(nn.Module):
             # self.list_of_sampled_shape_inds = [self.list_of_shape_inds[index][:self.list_of_shape_inds_lenths[index]] for index in self.sampled_indices]
             self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
             self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]
-            self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)   
+            # self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)   
             self.current_model_indices += self.meta_batch_size  
             if max(self.current_model_indices) >= len(self.list_of_arc_indices):
                 self.current_model_indices = np.arange(self.meta_batch_size)
@@ -196,7 +161,13 @@ class hyperActor(nn.Module):
             self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
-        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        # _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        self.multi_ghns = replicate(self.ghn, self.all_devices)
+        for i, device in enumerate(self.all_devices):
+            self.multi_ghns[i].default_edges = self.multi_ghns[i].default_edges.to(device)
+            self.multi_ghns[i].default_node_feat = self.multi_ghns[i].default_node_feat.to(device)
+            sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device]).view(-1,1)
+            _, embeddings = self.multi_ghns[i](self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], return_embeddings=True, shape_ind = sampled_shape_inds.to(device))
 
 
     def change_graph(self, repeat_sample = False):
@@ -204,15 +175,17 @@ class hyperActor(nn.Module):
 
 
     def forward(self, state, track=True):
-        # x = torch.stack([model(state) for model in self.current_model]).mean(dim=0)
         batch_per_net = int(state.shape[0]//len(self.current_model))
 
         if track:
             self.shape_ind_per_state_dim = torch.cat([self.current_shape_inds_vec[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
             self.arch_per_state_dim = torch.cat([self.current_archs[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
             self.sampled_indices_per_state_dim = torch.cat([torch.tensor([self.sampled_indices[i]]).repeat(batch_per_net) for i in range(len(self.current_model))])
+            x = gather([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net].to(self.device_model_list[i])) for i in range(len(self.current_model))], self.device)
+        else:
+            x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(len(self.current_model))])
 
-        x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(len(self.current_model))])
+        
 
         if len(x.shape) == 1:    
             mu = x[:x.shape[-1]//2]

@@ -137,7 +137,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class Agent(nn.Module):
-    def __init__(self, envs, hyper = False, meta_batch_size = 8, arch_conditional_critic = False, dual_critic = False, state_conditioned_std = False):
+    def __init__(self, envs, device, hyper = False, meta_batch_size = 8, arch_conditional_critic = False, dual_critic = False, state_conditioned_std = False):
         super().__init__()
         self.hyper = hyper
         self.arch_conditional_critic = arch_conditional_critic
@@ -242,6 +242,17 @@ class Agent(nn.Module):
 
     def load_model(self, path):
         self.load_state_dict(torch.load(path))
+
+    def to(self, device):
+        super().to(device)
+        self.device = device
+        if args.hyper:
+            self.actor_mean.list_of_shape_inds = self.actor_mean.list_of_shape_inds.to(device)
+            self.actor_mean.device = device
+            self.actor_mean.ghn.default_edges = self.actor_mean.ghn.default_edges.to(device)
+            self.actor_mean.ghn.device = device
+            self.actor_mean.ghn.default_node_feat = self.actor_mean.ghn.default_node_feat.to(device)
+        return self
         
 def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None):
     test_rewards = np.zeros((num_episodes, envs.num_envs))
@@ -346,7 +357,7 @@ if __name__ == "__main__":
     )    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = Agent(envs, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
+    agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
     if args.hyper:
         # optimizer = torch.optim.Adam([
         param_list = [
@@ -386,6 +397,9 @@ if __name__ == "__main__":
         optimizer.load_state_dict(torch.load(f"runs/{run_name}/optimizer.pt"))
 
     # ALGO Logic: Storage setup
+    # agent.to(torch.device("cuda:3"))
+    # agent.actor_mean.change_graph()
+    # parallel_net = nn.DataParallel(agent, device_ids=[0, 1, 2, 3])
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
