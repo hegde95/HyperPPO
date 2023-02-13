@@ -11,6 +11,7 @@ import random
 from itertools import product
 from torch.nn.parallel.replicate import replicate
 from torch.nn.parallel.scatter_gather import gather
+from torch.nn.parallel import parallel_apply
 
 class hyperActor(nn.Module):
 
@@ -31,7 +32,7 @@ class hyperActor(nn.Module):
         self.is_search = search
         self.conditional = conditional
         self.meta_batch_size = meta_batch_size
-        self.device = device
+        self.device = torch.device("cuda:0")
 
 
         list_of_allowable_layers = list(allowable_layers)
@@ -181,10 +182,11 @@ class hyperActor(nn.Module):
             self.shape_ind_per_state_dim = torch.cat([self.current_shape_inds_vec[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
             self.arch_per_state_dim = torch.cat([self.current_archs[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
             self.sampled_indices_per_state_dim = torch.cat([torch.tensor([self.sampled_indices[i]]).repeat(batch_per_net) for i in range(len(self.current_model))])
-            x = gather([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net].to(self.device_model_list[i])) for i in range(len(self.current_model))], self.device)
+            # x = gather([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net].to(self.device_model_list[i])) for i in range(len(self.current_model))], self.device)
+            x = gather(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net].to(self.device_model_list[i]) for i in range(len(self.current_model))]), self.device)
         else:
-            x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(len(self.current_model))])
-
+            # x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(len(self.current_model))])
+            x = torch.cat(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net] for i in range(len(self.current_model))]))
         
 
         if len(x.shape) == 1:    

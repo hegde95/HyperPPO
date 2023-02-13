@@ -14,7 +14,7 @@ import json
 
 import gym
 import numpy as np
-import pybullet_envs  # noqa
+# import pybullet_envs  # noqa
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -23,7 +23,13 @@ from torch.utils.tensorboard import SummaryWriter
 # from lib.Model import ActorCritic, HyperActorCritic
 from hyper.core import hyperActor
 import glob
+import functools
 
+from envs.brax_custom.brax_env import make_vec_env_brax
+from envs import brax_custom
+# from brax import envs as brax_envs
+# from brax.envs import to_torch
+# v = torch.ones(1, device='cuda')
 
 def parse_args():
     # fmt: off
@@ -264,7 +270,7 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
         done = [False for _ in range(envs.num_envs)]
         # episode_reward = np.zeros(envs.num_envs)
         for step in range(max_steps):
-            obs = torch.FloatTensor(obs).to(device)
+            obs = obs.to(device)
             action = agent.get_mean_action(obs)
             action = action.detach().cpu().numpy()
             obs, reward, done, info = envs.step(action)
@@ -272,7 +278,8 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
             # test_rewards[ep] += reward
             if all(done):
                 break
-        test_rewards[ep] = np.array([info['episode'][k]['r'] for k in range(envs.num_envs)])
+        # test_rewards[ep] = np.array([info['episode'][k]['r'] for k in range(envs.num_envs)])
+        test_rewards[ep] = envs.total_reward.cpu().numpy()
         # test_rewards.append(episode_reward)
     return test_rewards.mean(0).reshape(8,-1).mean(1)
 
@@ -349,12 +356,24 @@ if __name__ == "__main__":
     device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() and (args.cuda != -1) else "cpu")
 
     # env setup
-    envs = gym.vector.AsyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
-    )
-    test_envs = gym.vector.AsyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8*3)]
-    )    
+    # envs = gym.vector.AsyncVectorEnv(
+    #     [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
+    # )
+    # test_envs = gym.vector.AsyncVectorEnv(
+    #     [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8*3)]
+    # )  
+
+    envs = make_vec_env_brax("halfcheetah", args.num_envs, args.seed+1, torch.device("cuda:0"))  
+    test_envs = make_vec_env_brax("halfcheetah", 8*3, args.seed, torch.device("cuda:0"))
+    
+    # gym_name = f'brax-halfcheetah-v0'
+    # if gym_name not in gym.envs.registry.env_specs:
+    #     entry_point = functools.partial(brax_envs.create_gym_env, env_name="halfcheetah")
+    #     gym.register(gym_name, entry_point=entry_point)
+    # envs = gym.make(gym_name, batch_size=4096, episode_length=1000)
+    # # automatically convert between jax ndarrays and torch tensors:
+    # envs = to_torch.JaxToTorchWrapper(envs, device=device)    
+    
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
@@ -407,16 +426,16 @@ if __name__ == "__main__":
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
     if args.hyper:
-        policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
-        policy_shape_inds = -1 + torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
-        policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
+        # policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
+        # policy_shape_inds = -1 + torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
+        # policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
         if args.dual_critic:
             values2 = torch.zeros((args.num_steps, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     start_time = time.time()
-    next_obs = torch.Tensor(envs.reset()).to(device)
+    next_obs = envs.reset().to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
 
@@ -471,26 +490,26 @@ if __name__ == "__main__":
                     values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-            if args.hyper:
-                policy_shapes[step] = agent.actor_mean.arch_per_state_dim
-                policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
-                policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim            
+            # if args.hyper:
+                # policy_shapes[step] = agent.actor_mean.arch_per_state_dim
+                # policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
+                # policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim            
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
             # done = terminated | truncated
-            rewards[step] = torch.tensor(reward).to(device).view(-1)
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
+            rewards[step] = reward.to(device).view(-1)
+            next_obs, next_done = next_obs.to(device), done.to(device)
 
-            if "episode" in info.keys():
-                avg_ep_reward = np.mean([info['episode'][k]['r'] for k in range(args.num_envs)])
-                avg_ep_length = np.mean([info['episode'][k]['l'] for k in range(args.num_envs)])
-                print(f"global_step={global_step}, episodic_return={avg_ep_reward}")
-                writer.add_scalar("charts/episodic_return", avg_ep_reward, global_step)
-                writer.add_scalar("charts/episodic_length", avg_ep_length, global_step)
+            # if "episode" in info.keys():
+            #     avg_ep_reward = np.mean([info['episode'][k]['r'] for k in range(args.num_envs)])
+            #     avg_ep_length = np.mean([info['episode'][k]['l'] for k in range(args.num_envs)])
+            #     print(f"global_step={global_step}, episodic_return={avg_ep_reward}")
+            #     writer.add_scalar("charts/episodic_return", avg_ep_reward, global_step)
+            #     writer.add_scalar("charts/episodic_length", avg_ep_length, global_step)
 
 
-                break
+                # break
 
                 # for k in range(args.num_envs):
                 #     print(f"global_step={global_step}, episodic_return={info['episode'][k]['r']}")
@@ -498,15 +517,16 @@ if __name__ == "__main__":
                 #     writer.add_scalar("charts/episodic_length", info['episode'][k]["l"], global_step)
                 #     break
 
-            elif done.any():
-                print(f"global_step={global_step}, episodic_return={rewards[:step+1,:].mean()}")
-                writer.add_scalar("charts/episodic_return", rewards[:step+1,:].mean(), global_step)
-
+            if done.any():
+                print(f"global_step={global_step}, episodic_return={envs.total_reward.cpu().numpy().mean()}")
+                print(f"Time taken to accumulate this batch: {time.time() - start_time}")
+                writer.add_scalar("charts/episodic_return", envs.total_reward.cpu().numpy().mean(), global_step)
+                break
         
-        if args.hyper:
-            final_policy_shape = agent.actor_mean.arch_per_state_dim
-            final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
-            final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
+        # if args.hyper:
+        #     final_policy_shape = agent.actor_mean.arch_per_state_dim
+        #     final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
+        #     final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
         
         
         # test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
@@ -568,9 +588,9 @@ if __name__ == "__main__":
 
 	
         if args.hyper:
-            b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
-            b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
-            b_policy_indices = policy_indices[:step+1].reshape(-1)
+            # b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
+            # b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
+            # b_policy_indices = policy_indices[:step+1].reshape(-1)
 
             if args.dual_critic:
                 b_advantages2 = advantages2[:step+1].swapaxes(0,1).reshape(-1)
@@ -607,9 +627,9 @@ if __name__ == "__main__":
                 mb_values = b_values[mb_inds] 
 
                 if args.hyper:
-                    mb_policy_shapes = b_policy_shapes[mb_inds]
-                    mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
-                    mb_policy_indices = b_policy_indices[mb_inds] 
+                    # mb_policy_shapes = b_policy_shapes[mb_inds]
+                    # mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
+                    # mb_policy_indices = b_policy_indices[mb_inds] 
 
                     if args.dual_critic:
                         mb_advantages2 = b_advantages2[mb_inds]
