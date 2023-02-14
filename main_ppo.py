@@ -476,7 +476,7 @@ if __name__ == "__main__":
 
         for step in range(0, args.num_steps):
             global_step += 1 * args.num_envs
-            next_obs = envs.reset().to(device)
+            # next_obs = envs.reset().to(device)
             obs[step] = next_obs
             dones[step] = next_done
 
@@ -522,6 +522,7 @@ if __name__ == "__main__":
                 print(f"global_step={global_step}, episodic_return={envs.total_reward.cpu().numpy().mean()}")
                 print(f"Time taken to accumulate this batch: {time.time() - start_time}")
                 writer.add_scalar("charts/episodic_return", envs.total_reward.cpu().numpy().mean(), global_step)
+                envs.total_reward = torch.zeros((envs.num_envs,)).to('cuda:0')
                 break
         
         # if args.hyper:
