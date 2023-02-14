@@ -115,8 +115,10 @@ class MLP_GHN(nn.Module):
         self.default_edges[:,1] = torch.arange(len(self.default_edges[:,0])) + 1
         self.default_edges[:,2] = 1
         self.default_edges = self.default_edges.long().to(device)
+        self.default_edges = nn.Parameter(self.default_edges, requires_grad=False)
 
         self.default_node_feat = torch.zeros(50).long().to(device)
+        self.default_node_feat = nn.Parameter(self.default_node_feat, requires_grad=False)
 
 
 

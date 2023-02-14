@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 # from torch.distributions import Normal
 from torch.distributions.normal import Normal
+import threading
 
 from hyper.ghn_modules import MLP_GHN, MlpNetwork
 import numpy as np
@@ -168,15 +169,14 @@ class hyperActor(nn.Module):
         # current_model_list = []
         # input_list = []
         for i, device in enumerate(self.all_devices):
-            self.multi_ghns[i].default_edges = self.multi_ghns[i].default_edges.to(device)
-            self.multi_ghns[i].default_node_feat = self.multi_ghns[i].default_node_feat.to(device)
+            # self.multi_ghns[i].default_edges = self.multi_ghns[i].default_edges.to(device)
+            # self.multi_ghns[i].default_node_feat = self.multi_ghns[i].default_node_feat.to(device)
             sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device]).view(-1,1)
             # sampled_shape_inds_list.append(sampled_shape_inds.to(device))
             # current_model_list.append(self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device])
             # input_list.append((self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], sampled_shape_inds.to(device)))
             _, embeddings = self.multi_ghns[i](self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], return_embeddings=True, shape_ind = sampled_shape_inds.to(device))
 
-        # parallel_apply(self.multi_ghns, input_list)
 
     def change_graph(self, repeat_sample = False):
         self.re_query_uniform_weights(repeat_sample)
