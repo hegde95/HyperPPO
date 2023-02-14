@@ -260,8 +260,10 @@ class Agent(nn.Module):
             self.actor_mean.ghn.default_node_feat = self.actor_mean.ghn.default_node_feat.to(device)
         return self
         
-def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None):
+def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None, obs_normalizer = None):
     test_rewards = np.zeros((num_episodes, envs.num_envs))
+    if obs_normalizer is not None:
+        envs.obs_rms = obs_normalizer
     if args.hyper:
         # agent.actor_mean.change_graph()
         agent.actor_mean.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
@@ -754,7 +756,7 @@ if __name__ == "__main__":
         if args.hyper and args.dual_critic:
             writer.add_scalar("losses/explained_variance2", explained_var2, global_step)
 
-        test_reward = test_agent(test_envs, agent, device, num_episodes=3, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
+        test_reward = test_agent(test_envs, agent, device, num_episodes=3, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds, obs_normalizer = envs.obs_rms)
 
 	
         if args.hyper:              
