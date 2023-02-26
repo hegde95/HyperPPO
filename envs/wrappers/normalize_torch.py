@@ -67,6 +67,14 @@ class NormalizeObservation(gym.core.Wrapper):
         """Normalises the observation using the running mean and variance of the observations."""
         self.obs_rms.update(obs)
         return (obs - self.obs_rms.mean) / torch.sqrt(self.obs_rms.var + self.epsilon)
+    
+    def save_obs_rms(self, path):
+        """Saves the observation running mean and variance to a file."""
+        torch.save(self.obs_rms, path)
+
+    def load_obs_rms(self, path):
+        """Loads the observation running mean and variance from a file."""
+        self.obs_rms = torch.load(path)
 
 
 class NormalizeReward(gym.core.Wrapper):
@@ -105,3 +113,11 @@ class NormalizeReward(gym.core.Wrapper):
         obs = self.env.reset(**kwargs)
         self.total_reward = torch.zeros((self.num_envs,)).to('cuda:0')
         return obs
+    
+    def save_return_rms(self, path):
+        """Saves the reward running mean and variance to a file."""
+        torch.save(self.return_rms, path)
+
+    def load_return_rms(self, path):
+        """Loads the reward running mean and variance from a file."""
+        self.return_rms = torch.load(path)

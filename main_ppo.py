@@ -1,35 +1,32 @@
 # code built on top of https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
 import warnings
+
 # ignore UserWarnings and DeprecationWarnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 import argparse
+import functools
+import glob
+import json
 import os
 import random
 import time
 from distutils.util import strtobool
-import json
 
 import gym
 import numpy as np
-# import pybullet_envs  # noqa
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
-# from lib.Model import ActorCritic, HyperActorCritic
-from hyper.core import hyperActor
-import glob
-import functools
 
-from envs.brax_custom.brax_env import make_vec_env_brax
 from envs import brax_custom
-# from brax import envs as brax_envs
-# from brax.envs import to_torch
-# v = torch.ones(1, device='cuda')
+from envs.brax_custom.brax_env import make_vec_env_brax
+from hyper.core import hyperActor
+
 
 def parse_args():
     # fmt: off
@@ -114,26 +111,6 @@ def parse_args():
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     # fmt: on
     return args
-
-
-def make_env(env_id, seed, idx, capture_video, run_name, gamma):
-    def thunk():
-        env = gym.make(env_id)
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        if capture_video:
-            if idx == 0:
-                env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        env.seed(seed)
-        env.action_space.seed(seed)
-        env.observation_space.seed(seed)
-        return env
-
-    return thunk
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -357,25 +334,19 @@ if __name__ == "__main__":
 
     device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() and (args.cuda != -1) else "cpu")
 
-    # env setup
-    # envs = gym.vector.AsyncVectorEnv(
-    #     [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
-    # )
-    # test_envs = gym.vector.AsyncVectorEnv(
-    #     [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name, args.gamma) for i in range(8*3)]
-    # )  
-
     envs = make_vec_env_brax("halfcheetah", args.num_envs, args.seed+1, torch.device("cuda:0"))  
     test_envs = make_vec_env_brax("halfcheetah", 8*3, args.seed, torch.device("cuda:0"))
     
-    # gym_name = f'brax-halfcheetah-v0'
-    # if gym_name not in gym.envs.registry.env_specs:
-    #     entry_point = functools.partial(brax_envs.create_gym_env, env_name="halfcheetah")
-    #     gym.register(gym_name, entry_point=entry_point)
-    # envs = gym.make(gym_name, batch_size=4096, episode_length=1000)
-    # # automatically convert between jax ndarrays and torch tensors:
-    # envs = to_torch.JaxToTorchWrapper(envs, device=device)    
-    
+    if resume:
+        # load obs normalizer torch 
+        envs.load_obs_rms(os.path.join('runs', run_name, 'obs_normalizer.pt'))
+        test_envs.load_obs_rms(os.path.join('runs', run_name, 'test_obs_normalizer.pt'))
+
+        # load return normalizer torch
+        envs.load_return_rms(os.path.join('runs', run_name, 'return_normalizer.pt'))
+        test_envs.load_return_rms(os.path.join('runs', run_name, 'test_return_normalizer.pt'))
+        
+
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
@@ -418,9 +389,6 @@ if __name__ == "__main__":
         optimizer.load_state_dict(torch.load(f"runs/{run_name}/optimizer.pt"))
 
     # ALGO Logic: Storage setup
-    # agent.to(torch.device("cuda:3"))
-    # agent.actor_mean.change_graph()
-    # parallel_net = nn.DataParallel(agent, device_ids=[0, 1, 2, 3])
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -533,21 +501,6 @@ if __name__ == "__main__":
         #     final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
         
         
-        # test_reward = test_agent(test_envs, agent, device, num_episodes=10, hyper=args.hyper, max_steps = 1000, list_of_test_arch_indices = list_of_test_arch_indices, list_of_test_shape_inds = list_of_test_shape_inds)
-
-	
-        # if args.hyper:
-        #     for i in range(len(list_of_test_arch_indices)):
-        #         print(f"test reward_{i}:", test_reward[i])
-        #         writer.add_scalar(f"charts/test_reward_{i}", test_reward[i], global_step)      
-        # print("test reward:", test_reward.mean())
-        # writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
-
-
-        # # change the hyper network current model
-        # if args.hyper:
-        #     agent.actor_mean.change_graph()
-
         # bootstrap value if not done
         with torch.no_grad():
             advantages = torch.zeros_like(rewards).to(device)
@@ -783,8 +736,14 @@ if __name__ == "__main__":
                 "global_step":global_step,
                 "wandb_id":wandb_id if args.track else None,
                 }, f, indent=2)
+        
+        # save env obs normalizer and reward normalizer
+        envs.save_obs_rms(os.path.join('runs', run_name, 'obs_normalizer.pt'))
+        envs.save_return_rms(os.path.join('runs', run_name, 'return_normalizer.pt'))
 
-
+        # save test env obs normalizer and reward normalizer
+        test_envs.save_obs_rms(os.path.join('runs', run_name, 'test_obs_normalizer.pt'))
+        test_envs.save_return_rms(os.path.join('runs', run_name, 'test_return_normalizer.pt'))
 
         if  update % args.save_interval == 0:
             agent.save_model(os.path.join('runs', run_name, 'checkpoints'), update)
