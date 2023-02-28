@@ -19,71 +19,73 @@ class hyperActor(nn.Module):
     def __init__(self, 
                 act_dim, 
                 obs_dim, 
-                # act_limit, 
                 allowable_layers, 
                 search = False, 
                 conditional = True, 
                 meta_batch_size = 1,
-                # gumbel_tau = 1.0,
-                device = "cpu"
+                device = "cpu",
+                architecture_sampling_mode = "sequential"
                 ):
         super().__init__()
+
         self.act_dim = act_dim
         self.obs_dim = obs_dim
         self.is_search = search
         self.conditional = conditional
         self.meta_batch_size = meta_batch_size
+        self.architecture_sampling_mode = architecture_sampling_mode
+
         self.device = torch.device("cuda:0")
 
 
+        # initialize all list of shape and architecture indices
+        self._initialize_shape_arch_inidices(allowable_layers)
+
+        # initialize all data required for architecture sampling
+        self._initialize_architecture_smapling_data()
+
+        # initialize the GHN
+        self._initialize_ghn(self.obs_dim, self.act_dim)
+        
+        # initialize all devices for parallelization on multiple GPUs
+        self._initialize_devices()
+
+
+    def _initialize_architecture_smapling_data(self):
+        ''' Initializes all the data required for architecture sampling
+        '''
+        if self.architecture_sampling_mode == "sequential":
+            self.current_model_indices = np.arange(self.meta_batch_size)
+
+
+
+
+    def _initialize_shape_arch_inidices(self, allowable_layers):
+        ''' Creates:
+            1. list_of_arcs: list of all possible architectures, sorted by total number of parameters
+            2. list of shape indicators: list of shape indicators for each architecture, that can be used as an input to the GHN
+            3. list of arc indices: list of indices of the architectures in list_of_arcs, can be used to sample architectures later
+        '''
+
         list_of_allowable_layers = list(allowable_layers)
-
         self.list_of_arcs = []
-        
-        # for i in range(500):
-        #     self.list_of_arcs.extend([
-        #         [4, 4],
-        #         [8, 8, 8],
-        #         [16],
-        #         [16, 16, 16],
-        #         [32, 32, 32],
-        #         [64, 64, 64, 64],
-        #         [128, 128, 128, 128],
-        #         [256, 256, 256, 256],
-
-        #         [8],
-        #         [32],
-        #         [16, 256],
-        #         [32, 32, 32, 32],
-        #         [64],
-        #         [128, 128],
-        #         [256, 256],
-
-        #         [8, 8],
-        #         [16, 8],
-        #         [16, 8, 16],
-        #         [32, 64, 32],
-        #         [64, 64, 64],
-        #         [128, 128, 128],
-        #         [256, 256, 256],                        
-        #     ])
-        # self.list_of_arcs.extend([
-        #         [4, 4],
-        #         [8, 8, 8],
-        #         [16],
-        #         [16, 16, 16],
-        #         [32, 32, 32],
-        #         [64, 64, 64, 64],
-        #         [128, 128, 128, 128],
-        #         [256, 256, 256, 256]
-        #     ])
-        
         for k in range(1,5):
-            self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))
-        
-        # self.list_of_arcs = [(256,256,256) for i in range(1000)]
-        
+            self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))       
         self.list_of_arcs.sort(key = lambda x:self.get_params(x))
+
+        self._initialize_shape_inds()
+
+        self.list_of_arc_indices = np.arange(len(self.list_of_arcs))
+        self.all_models = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.list_of_arc_indices]
+        # shuffle the list of arcs indices
+        np.random.shuffle(self.list_of_arc_indices)
+
+
+    def _initialize_shape_inds(self):
+        ''' Creates:
+            1. list_of_shape_inds: list of shape indicators for each architecture, that can be used as an input to the GHN
+            2. list_of_shape_inds_lenths: list of lengths of each shape indicator, needed since the shape indicators are not all the same length
+        '''
 
         self.list_of_shape_inds = []
         for arc in self.list_of_arcs:
@@ -105,11 +107,23 @@ class hyperActor(nn.Module):
             self.list_of_shape_inds[i] = torch.cat([self.list_of_shape_inds[i], torch.tensor(-1).to(self.device).repeat(num_pad,1)], 0)
         self.list_of_shape_inds = torch.stack(self.list_of_shape_inds)
         self.list_of_shape_inds = self.list_of_shape_inds.reshape(len(self.list_of_shape_inds),self.shape_inds_max_len)
-        self.list_of_arc_indices = np.arange(len(self.list_of_arcs))
-        # shuffle the list of arcs indices
-        self.all_models = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.list_of_arc_indices]
-        np.random.shuffle(self.list_of_arc_indices)
-        self.current_model_indices = np.arange(self.meta_batch_size)
+
+
+    def _initialize_devices(self):
+        ''' Inititalize all devices since we are using multiple GPUs. device_model_list can be used later to assign models to devices quickly
+        '''
+
+        self.all_devices = [torch.device('cuda:{}'.format(i)) for i in range(torch.cuda.device_count())]
+        self.num_current_models_per_device = int(self.meta_batch_size / len(self.all_devices)) 
+        self.device_model_list = []
+        for device in self.all_devices:
+            self.device_model_list.extend([device for i in range(self.num_current_models_per_device)])
+
+
+    def _initialize_ghn(self, obs_dim, act_dim):
+        ''' Initialize the GHN that takes in the shape indicators and outputs weights for that corresponding architecture
+        '''
+
         config = {}
         config['max_shape'] = (256, 256, 1, 1)
         config['num_classes'] = 4 * act_dim
@@ -124,12 +138,6 @@ class hyperActor(nn.Module):
         self.ghn = MLP_GHN(**config,
                     debug_level=0, device=self.device).to(self.device)  
 
-        # get all torch devices
-        self.all_devices = [torch.device('cuda:{}'.format(i)) for i in range(torch.cuda.device_count())]
-        self.num_current_models_per_device = int(self.meta_batch_size / len(self.all_devices)) 
-        self.device_model_list = []
-        for device in self.all_devices:
-            self.device_model_list.extend([device for i in range(self.num_current_models_per_device)])
 
     def set_graph(self, indices_vector, shape_ind_vec):
         self.sampled_indices = indices_vector
@@ -146,18 +154,31 @@ class hyperActor(nn.Module):
         ct += ((net[-1] +1) * 2 * self.act_dim)
         return ct            
 
-    def re_query_uniform_weights(self, repeat_sample = False):
-        if not repeat_sample:
+    def sample_arc_indices(self, mode = 'sequential'):
+        if mode == 'biased':
+            pass
+        elif mode == 'sequential':
             self.sampled_indices = self.list_of_arc_indices[self.current_model_indices]
-            # self.list_of_sampled_shape_inds = [self.list_of_shape_inds[index][:self.list_of_shape_inds_lenths[index]] for index in self.sampled_indices]
-            self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
-            self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]
-            # self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)   
             self.current_model_indices += self.meta_batch_size  
             if max(self.current_model_indices) >= len(self.list_of_arc_indices):
                 self.current_model_indices = np.arange(self.meta_batch_size)
                 # shuffle
                 np.random.shuffle(self.list_of_arc_indices)
+        elif mode == 'uniform':
+            self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size)
+        else:
+            raise NotImplementedError
+
+
+
+
+    def re_query_uniform_weights(self, repeat_sample = False):
+        if not repeat_sample:
+
+            self.sample_arc_indices(mode = self.architecture_sampling_mode)
+            
+            self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
+            self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]
 
             self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
             self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
@@ -207,17 +228,12 @@ class hyperActor(nn.Module):
         # log_std = torch.clamp(log_std, self.min_log_std, self.max_log_std)        
         return mu, log_std    
 
-    def evaluate(self, state, epsilon=1e-6):
-        mu, log_std = self.forward(state)
-        std = log_std.exp()
-        dist = Normal(mu, std)
-        e = dist.rsample().to(state.device)
-        action = torch.tanh(e)
-        log_prob = (dist.log_prob(e) - torch.log(1 - action.pow(2) + epsilon)).sum(1, keepdim=True)
-
-        return action, log_prob
 
 
+
+
+
+    ############################################################### forward helper functions, mostly only for debugging purposes ######################################################
     def sample(self, state, epsilon=1e-6):
         mu, log_std = self.forward(state)
         std = log_std.exp()

@@ -50,7 +50,7 @@ def parse_args():
 
     parser.add_argument("--hyper", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Use a Hyper network")
-    parser.add_argument("--meta_batch_size", type=int, default=256,
+    parser.add_argument("--meta_batch_size", type=int, default=32,
         help="the number of meta batch size")
     parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable architecture mixing")
@@ -246,7 +246,7 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
     test_rewards = np.zeros((num_episodes, envs.num_envs))
     if obs_normalizer is not None:
         envs.obs_rms = obs_normalizer
-    if args.hyper:
+    if hyper:
         # agent.actor_mean.change_graph()
         agent.actor_mean.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
     for ep in range(num_episodes):
