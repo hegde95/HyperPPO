@@ -109,6 +109,11 @@ def parse_args():
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
+
+    if args.hyper is False:
+        args.arch_conditional_critic = False
+        args.dual_critic = False
+        args.enable_arch_mixing = False
     # fmt: on
     return args
 
