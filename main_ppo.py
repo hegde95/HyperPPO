@@ -60,6 +60,8 @@ def parse_args():
         help="Enable dual critic")
     parser.add_argument("--state_conditioned_std", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable state conditioned std")
+    parser.add_argument("--multi_gpu", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+        help="Enable multi gpu training for the GHN. Enable this only if meta_batch_size is larger than 32 for a speedup, otherwise it will be slower.")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
@@ -133,7 +135,8 @@ class Agent(nn.Module):
         self.state_conditioned_std = state_conditioned_std
 
         if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), meta_batch_size = meta_batch_size, device=device)
+            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), \
+                                         meta_batch_size = meta_batch_size, device=device, multi_gpu=args.multi_gpu)
             self.actor_mean.change_graph()
 
             self.critic = nn.Sequential(
@@ -354,7 +357,8 @@ if __name__ == "__main__":
 
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
+    agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, \
+                  state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
     if args.hyper:
         # optimizer = torch.optim.Adam([
         param_list = [

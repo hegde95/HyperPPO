@@ -24,7 +24,8 @@ class hyperActor(nn.Module):
                 conditional = True, 
                 meta_batch_size = 1,
                 device = "cpu",
-                architecture_sampling_mode = "sequential"
+                architecture_sampling_mode = "sequential",
+                multi_gpu = True,
                 ):
         super().__init__()
 
@@ -34,9 +35,11 @@ class hyperActor(nn.Module):
         self.conditional = conditional
         self.meta_batch_size = meta_batch_size
         self.architecture_sampling_mode = architecture_sampling_mode
+        self.multi_gpu = multi_gpu
 
-        self.device = torch.device("cuda:0")
-
+        
+        # initialize all devices for parallelization on multiple GPUs
+        self._initialize_devices(device)
 
         # initialize all list of shape and architecture indices
         self._initialize_shape_arch_inidices(allowable_layers)
@@ -47,8 +50,6 @@ class hyperActor(nn.Module):
         # initialize the GHN
         self._initialize_ghn(self.obs_dim, self.act_dim)
         
-        # initialize all devices for parallelization on multiple GPUs
-        self._initialize_devices()
 
 
     def _initialize_architecture_smapling_data(self):
@@ -56,6 +57,8 @@ class hyperActor(nn.Module):
         '''
         if self.architecture_sampling_mode == "sequential":
             self.current_model_indices = np.arange(self.meta_batch_size)
+        elif self.architecture_sampling_mode == "uniform":
+            self.current_model_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, replace = True)
 
 
 
@@ -109,15 +112,20 @@ class hyperActor(nn.Module):
         self.list_of_shape_inds = self.list_of_shape_inds.reshape(len(self.list_of_shape_inds),self.shape_inds_max_len)
 
 
-    def _initialize_devices(self):
+    def _initialize_devices(self, device):
         ''' Inititalize all devices since we are using multiple GPUs. device_model_list can be used later to assign models to devices quickly
         '''
+        if self.multi_gpu:
+            self.device = torch.device("cuda:0")            
+            
+            self.all_devices = [torch.device('cuda:{}'.format(i)) for i in range(torch.cuda.device_count())]
+            self.num_current_models_per_device = int(self.meta_batch_size / len(self.all_devices)) 
+            self.device_model_list = []
+            for device in self.all_devices:
+                self.device_model_list.extend([device for i in range(self.num_current_models_per_device)])
+        else:
+            self.device = device
 
-        self.all_devices = [torch.device('cuda:{}'.format(i)) for i in range(torch.cuda.device_count())]
-        self.num_current_models_per_device = int(self.meta_batch_size / len(self.all_devices)) 
-        self.device_model_list = []
-        for device in self.all_devices:
-            self.device_model_list.extend([device for i in range(self.num_current_models_per_device)])
 
 
     def _initialize_ghn(self, obs_dim, act_dim):
@@ -132,21 +140,25 @@ class hyperActor(nn.Module):
         config['ve'] = 1 > 1
         config['layernorm'] = True
         config['hid'] = 16
-
         self.ghn_config = config
-
         self.ghn = MLP_GHN(**config,
                     debug_level=0, device=self.device).to(self.device)  
 
 
     def set_graph(self, indices_vector, shape_ind_vec):
+        ''' Set the graph to be used by the GHN. We can do this only by passing the indices of the 
+            architectures we want to use and the shape indicators for those architectures. Then we estimate the 
+            weights for those architectures and set it to the current model
+        '''
         self.sampled_indices = indices_vector
-        self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
+        sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
         self.current_model = [self.all_models[i] for i in self.sampled_indices]
-        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = sampled_shape_inds)
 
 
     def get_params(self, net):
+        ''' Get the number of parameters in a MLP network architecture
+        '''
         ct = 0
         ct += ((self.obs_dim + 1) *net[0])
         for i in range(len(net)-1):
@@ -155,6 +167,12 @@ class hyperActor(nn.Module):
         return ct            
 
     def sample_arc_indices(self, mode = 'sequential'):
+        ''' Sample the indices of the architectures to be used for the current model
+            Sampling strategies:
+            1. layer_biased: sample the indices of the architecture while making sure architectures with fewer layers are sampled more often
+            2. sequential: sample the indices of the architecture sequentially
+            3. uniform: sample the indices of the architecture uniformly
+        '''
         if mode == 'biased':
             pass
         elif mode == 'sequential':
@@ -172,7 +190,11 @@ class hyperActor(nn.Module):
 
 
 
-    def re_query_uniform_weights(self, repeat_sample = False):
+    def change_graph(self, repeat_sample = False):
+        ''' Estimate the weights for the current models.
+            If repeat_sample is True, then we re-estimate the weights for the same architectures (i.e. current models does not change)
+            If repeat_sample is False, then we sample new architectures (i.e. change the current models) and estimate the weights for those architectures 
+        '''
         if not repeat_sample:
 
             self.sample_arc_indices(mode = self.architecture_sampling_mode)
@@ -184,36 +206,32 @@ class hyperActor(nn.Module):
             self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
-        # _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
-        self.multi_ghns = replicate(self.ghn, self.all_devices)
-        # sampled_shape_inds_list = []
-        # current_model_list = []
-        # input_list = []
-        for i, device in enumerate(self.all_devices):
-            # self.multi_ghns[i].default_edges = self.multi_ghns[i].default_edges.to(device)
-            # self.multi_ghns[i].default_node_feat = self.multi_ghns[i].default_node_feat.to(device)
-            sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device]).view(-1,1)
-            # sampled_shape_inds_list.append(sampled_shape_inds.to(device))
-            # current_model_list.append(self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device])
-            # input_list.append((self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], sampled_shape_inds.to(device)))
-            _, embeddings = self.multi_ghns[i](self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], return_embeddings=True, shape_ind = sampled_shape_inds.to(device))
-
-
-    def change_graph(self, repeat_sample = False):
-        self.re_query_uniform_weights(repeat_sample)
+        
+        if self.multi_gpu:
+            self.multi_ghns = replicate(self.ghn, self.all_devices)
+            for i, device in enumerate(self.all_devices):
+                sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device]).view(-1,1)
+                _, embeddings = self.multi_ghns[i](self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], return_embeddings=True, shape_ind = sampled_shape_inds.to(device))
+        else:
+            sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)
+            _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = sampled_shape_inds)
 
 
     def forward(self, state, track=True):
+        ''' Do a forward pass through the current models. We split the state batch into chunks of size batch_per_net and pass it through each of the current models
+            track: if True, we track the shape indicators, architectures and indices of the current models. 
+                We store this information if it is needed for architecture conditioned value functions
+        '''
         batch_per_net = int(state.shape[0]//len(self.current_model))
 
         if track:
             self.shape_ind_per_state_dim = torch.cat([self.current_shape_inds_vec[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
             self.arch_per_state_dim = torch.cat([self.current_archs[i].repeat(batch_per_net,1) for i in range(len(self.current_model))])
             self.sampled_indices_per_state_dim = torch.cat([torch.tensor([self.sampled_indices[i]]).repeat(batch_per_net) for i in range(len(self.current_model))])
-            # x = gather([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net].to(self.device_model_list[i])) for i in range(len(self.current_model))], self.device)
+            
+        if self.multi_gpu:    
             x = gather(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net].to(self.device_model_list[i]) for i in range(len(self.current_model))]), self.device)
         else:
-            # x = torch.cat([self.current_model[i](state[i*batch_per_net:(i+1)*batch_per_net]) for i in range(len(self.current_model))])
             x = torch.cat(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net] for i in range(len(self.current_model))]))
         
 
