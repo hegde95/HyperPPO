@@ -15,7 +15,15 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class Agent(nn.Module):
-    def __init__(self, envs, device, hyper = False, meta_batch_size = 8, arch_conditional_critic = False, dual_critic = False, state_conditioned_std = False, multi_gpu = False):
+    def __init__(self, envs, device, 
+                 hyper = False, 
+                 meta_batch_size = 8, 
+                 arch_conditional_critic = False, 
+                 dual_critic = False, 
+                 state_conditioned_std = False, 
+                 multi_gpu = False, 
+                 architecture_sampling = 'biased'
+                 ):
         super().__init__()
         self.hyper = hyper
         self.arch_conditional_critic = arch_conditional_critic
@@ -24,7 +32,7 @@ class Agent(nn.Module):
 
         if self.hyper:
             self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), \
-                                         meta_batch_size = meta_batch_size, device=device, multi_gpu=multi_gpu)
+                                         meta_batch_size = meta_batch_size, device=device, multi_gpu=multi_gpu, architecture_sampling_mode=architecture_sampling)
             self.actor_mean.change_graph()
 
             self.critic = nn.Sequential(

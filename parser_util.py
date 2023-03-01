@@ -37,6 +37,8 @@ def parse_args():
         help="Enable state conditioned std")
     parser.add_argument("--multi_gpu", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable multi gpu training for the GHN. Enable this only if meta_batch_size is larger than 32 for a speedup, otherwise it will be slower.")
+    parser.add_argument("--architecture_sampling", type=str, default="biased",
+                        help="the architecture sampling method, has to be in [biased, uniform, sequential]")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
