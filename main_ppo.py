@@ -6,14 +6,11 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-import argparse
-import functools
 import glob
 import json
 import os
 import random
 import time
-from distutils.util import strtobool
 
 import gym
 import numpy as np
@@ -23,228 +20,9 @@ import torch.optim as optim
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
-from envs import brax_custom
-from envs.brax_custom.brax_env import make_vec_env_brax
-from hyper.core import hyperActor
+from parser_util import parse_args, argparse
 
 
-def parse_args():
-    # fmt: off
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exp-name", type=str, default=os.path.basename(__file__).rstrip(".py"),
-        help="the name of this experiment")
-    parser.add_argument("--seed", type=int, default=1,
-        help="seed of the experiment")
-    parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="if toggled, `torch.backends.cudnn.deterministic=False`")
-    parser.add_argument("--cuda", type=int, default=0,
-        help="cuda will be enabled (run on cuda:0) by default, set to -1 to run on CPU, specify a positive int to run on a specific GPU")
-    parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="if toggled, this experiment will be tracked with Weights and Biases")
-    parser.add_argument("--wandb-project-name", type=str, default="hyperppo",
-        help="the wandb's project name")
-    parser.add_argument("--wandb-entity", type=str, default=None,
-        help="the entity (team) of wandb's project")
-    parser.add_argument("--capture-video", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="whether to capture videos of the agent performances (check out `videos` folder)")
-
-    parser.add_argument("--hyper", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="Use a Hyper network")
-    parser.add_argument("--meta_batch_size", type=int, default=32,
-        help="the number of meta batch size")
-    parser.add_argument("--enable_arch_mixing", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="Enable architecture mixing")
-    parser.add_argument("--arch_conditional_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="Enable architecture conditional critic")
-    parser.add_argument("--dual_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="Enable dual critic")
-    parser.add_argument("--state_conditioned_std", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="Enable state conditioned std")
-    parser.add_argument("--multi_gpu", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="Enable multi gpu training for the GHN. Enable this only if meta_batch_size is larger than 32 for a speedup, otherwise it will be slower.")
-
-    # Algorithm specific arguments
-    parser.add_argument("--env-id", type=str, default="HalfCheetah-v2",
-        help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=4_096_000_000,
-        help="total timesteps of the experiments")
-    parser.add_argument("--learning-rate", type=float, default=3e-4,
-        help="the learning rate of the optimizer")
-    parser.add_argument("--num-envs", type=int, default=4096,
-        help="the number of parallel game environments")
-    parser.add_argument("--num-steps", type=int, default=1000,
-        help="the number of steps to run in each environment per policy rollout")
-    parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="Toggle learning rate annealing for policy and value networks")
-    parser.add_argument("--gamma", type=float, default=0.99,
-        help="the discount factor gamma")
-    parser.add_argument("--gae-lambda", type=float, default=0.95,
-        help="the lambda for the general advantage estimation")
-    parser.add_argument("--num-minibatches", type=int, default=32,
-        help="the number of mini-batches")
-    parser.add_argument("--update-epochs", type=int, default=10,
-        help="the K epochs to update the policy")
-    parser.add_argument("--norm-adv", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="Toggles advantages normalization")
-    parser.add_argument("--clip-coef", type=float, default=0.2,
-        help="the surrogate clipping coefficient")
-    parser.add_argument("--clip-vloss", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="Toggles whether or not to use a clipped loss for the value function, as per the paper.")
-    parser.add_argument("--ent-coef", type=float, default=0.0,
-        help="coefficient of the entropy")
-    parser.add_argument("--vf-coef", type=float, default=0.5,
-        help="coefficient of the value function")
-    parser.add_argument("--max-grad-norm", type=float, default=0.5,
-        help="the maximum norm for the gradient clipping")
-    parser.add_argument("--target-kl", type=float, default=None,
-        help="the target KL divergence threshold")
-
-    parser.add_argument('--wandb-tag', type=str,
-        help='Use a custom tag for wandb. (default: "")')   
-    parser.add_argument("--debug", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="Run in debug mode")     
-    parser.add_argument("--save-interval", type=int, default=25,
-        help="Save interval")
-    parser.add_argument("--run-name", type=str, default=None,
-        help="Run name")
-                                 
-    args = parser.parse_args()
-    args.batch_size = int(args.num_envs * args.num_steps)
-    args.minibatch_size = int(args.batch_size // args.num_minibatches)
-
-    if args.hyper is False:
-        args.arch_conditional_critic = False
-        args.dual_critic = False
-        args.enable_arch_mixing = False
-    # fmt: on
-    return args
-
-
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer
-
-
-class Agent(nn.Module):
-    def __init__(self, envs, device, hyper = False, meta_batch_size = 8, arch_conditional_critic = False, dual_critic = False, state_conditioned_std = False):
-        super().__init__()
-        self.hyper = hyper
-        self.arch_conditional_critic = arch_conditional_critic
-        self.dual_critic = dual_critic
-        self.state_conditioned_std = state_conditioned_std
-
-        if self.hyper:
-            self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), \
-                                         meta_batch_size = meta_batch_size, device=device, multi_gpu=args.multi_gpu)
-            self.actor_mean.change_graph()
-
-            self.critic = nn.Sequential(
-                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod() + arch_conditional_critic*self.actor_mean.arch_max_len, 64)),
-                nn.Tanh(),
-                layer_init(nn.Linear(64, 64)),
-                nn.Tanh(),
-                layer_init(nn.Linear(64, 1), std=1.0),
-            )            
-
-            if self.dual_critic:
-                assert self.arch_conditional_critic, "Dual critic requires arch_conditional_critic to be True"
-
-                self.critic2 = nn.Sequential(
-                    layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-                    nn.Tanh(),
-                    layer_init(nn.Linear(64, 64)),
-                    nn.Tanh(),
-                    layer_init(nn.Linear(64, 1), std=1.0),
-                )
-        
-        else:
-            self.actor_mean = nn.Sequential(
-                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 256)),
-                nn.ReLU(),
-                layer_init(nn.Linear(256, 256)),
-                nn.ReLU(),
-                layer_init(nn.Linear(256, 256)),
-                nn.ReLU(),                
-                layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
-            )
-            self.critic = nn.Sequential(
-                layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-                nn.Tanh(),
-                layer_init(nn.Linear(64, 64)),
-                nn.Tanh(),
-                layer_init(nn.Linear(64, 1), std=1.0),
-            )            
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
-
-    def get_value(self, x):
-        if self.hyper and self.arch_conditional_critic:
-            if self.dual_critic:
-                return (self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1)), self.critic2(x))
-            else:
-                return self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
-        else:
-            return self.critic(x)
-
-    def get_action_and_value(self, x, action=None):
-        if self.hyper:
-            action_mean, actor_logstd = self.actor_mean(x)
-            if self.arch_conditional_critic:
-                value = self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
-
-                if self.dual_critic:
-                    value2 = self.critic2(x)
-                    value = (value, value2)
-            else:
-                value = self.critic(x)
-        else:
-            action_mean = self.actor_mean(x)
-            value = self.critic(x)
-
-        if self.state_conditioned_std:
-            action_logstd = actor_logstd
-        else:
-            action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)
-        probs = Normal(action_mean, action_std)
-        if action is None:
-            action = probs.sample()
-
-        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), value
-
-    def get_mean_action(self,x):
-        if self.hyper:
-            action_mean, _ = self.actor_mean(x, track = False)
-        else:
-            action_mean = self.actor_mean(x)
-        
-        return action_mean
-
-    def save_model(self, save_dir, epoch):
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        if epoch == -1:
-            path = os.path.join(save_dir, 'model.pt')
-        else:
-            path = os.path.join(save_dir, 'model_epoch_{}.pt'.format(epoch))
-        torch.save(self.state_dict(), path)
-        print(f"Model saved to {path}")
-
-
-    def load_model(self, path):
-        self.load_state_dict(torch.load(path))
-
-    def to(self, device):
-        super().to(device)
-        self.device = device
-        if args.hyper:
-            self.actor_mean.list_of_shape_inds = self.actor_mean.list_of_shape_inds.to(device)
-            self.actor_mean.device = device
-            self.actor_mean.ghn.default_edges = self.actor_mean.ghn.default_edges.to(device)
-            self.actor_mean.ghn.device = device
-            self.actor_mean.ghn.default_node_feat = self.actor_mean.ghn.default_node_feat.to(device)
-        return self
-        
 def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_of_test_arch_indices = None, list_of_test_shape_inds = None, obs_normalizer = None):
     test_rewards = np.zeros((num_episodes, envs.num_envs))
     if obs_normalizer is not None:
@@ -273,6 +51,13 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
 
 if __name__ == "__main__":
     args = parse_args()
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.cuda)
+
+    from agent import Agent
+    from envs.brax_custom.brax_env import make_vec_env_brax
+
+
 
     if args.run_name:
         run_name = args.run_name
@@ -358,7 +143,7 @@ if __name__ == "__main__":
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, \
-                  state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic).to(device)
+                  state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic, multi_gpu = args.multi_gpu).to(device)
     if args.hyper:
         # optimizer = torch.optim.Adam([
         param_list = [
