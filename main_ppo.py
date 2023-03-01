@@ -56,6 +56,7 @@ if __name__ == "__main__":
 
     from agent import Agent
     from envs.brax_custom.brax_env import make_vec_env_brax
+    args.cuda = 0
 
 
 

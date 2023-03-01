@@ -1,18 +1,15 @@
+from itertools import product
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-# from torch.distributions import Normal
 from torch.distributions.normal import Normal
-import threading
-
-from hyper.ghn_modules import MLP_GHN, MlpNetwork
-import numpy as np
-from itertools import product as cartesian_product
-import random
-from itertools import product
+from torch.nn.parallel import parallel_apply
 from torch.nn.parallel.replicate import replicate
 from torch.nn.parallel.scatter_gather import gather
-from torch.nn.parallel import parallel_apply
+
+from hyper.ghn_modules import MLP_GHN, MlpNetwork
+
 
 class hyperActor(nn.Module):
 
@@ -24,7 +21,7 @@ class hyperActor(nn.Module):
                 conditional = True, 
                 meta_batch_size = 1,
                 device = "cpu",
-                architecture_sampling_mode = "sequential",
+                architecture_sampling_mode = "biased",
                 multi_gpu = True,
                 ):
         super().__init__()
@@ -58,7 +55,17 @@ class hyperActor(nn.Module):
         if self.architecture_sampling_mode == "sequential":
             self.current_model_indices = np.arange(self.meta_batch_size)
         elif self.architecture_sampling_mode == "uniform":
-            self.current_model_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, replace = True)
+            # self.current_model_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, replace = True)
+            pass
+        elif self.architecture_sampling_mode == "biased":
+            self.arch_sampling_probs = []
+            num_unique_num_layers = len(set([len(x) for x in self.list_of_arcs]))
+            for i in self.list_of_arc_indices:
+                num_layers = len(self.list_of_arcs[i])
+                num_archs_with_same_num_layers = len([x for x in self.list_of_arcs if len(x) == num_layers])
+                self.arch_sampling_probs.append(1/num_archs_with_same_num_layers)
+            self.arch_sampling_probs = (1/num_unique_num_layers)*np.array(self.arch_sampling_probs)
+
 
 
 
@@ -174,7 +181,7 @@ class hyperActor(nn.Module):
             3. uniform: sample the indices of the architecture uniformly
         '''
         if mode == 'biased':
-            pass
+            self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, p = self.arch_sampling_probs, replace=False)
         elif mode == 'sequential':
             self.sampled_indices = self.list_of_arc_indices[self.current_model_indices]
             self.current_model_indices += self.meta_batch_size  
@@ -183,7 +190,7 @@ class hyperActor(nn.Module):
                 # shuffle
                 np.random.shuffle(self.list_of_arc_indices)
         elif mode == 'uniform':
-            self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size)
+            self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, replace=False)
         else:
             raise NotImplementedError
 
