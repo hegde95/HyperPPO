@@ -144,7 +144,7 @@ if __name__ == "__main__":
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs, device, args.hyper, meta_batch_size = args.meta_batch_size, arch_conditional_critic=args.arch_conditional_critic, \
-                  state_conditioned_std=args.state_conditioned_std, dual_critic=args.dual_critic, architecture_sampling = args.architecture_sampling, \
+                  std_mode=args.std_mode, dual_critic=args.dual_critic, architecture_sampling = args.architecture_sampling, \
                     multi_gpu = args.multi_gpu).to(device)
     if args.hyper:
         # optimizer = torch.optim.Adam([

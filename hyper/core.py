@@ -10,6 +10,11 @@ from torch.nn.parallel.scatter_gather import gather
 
 from hyper.ghn_modules import MLP_GHN, MlpNetwork
 
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
 
 class hyperActor(nn.Module):
 
@@ -21,7 +26,7 @@ class hyperActor(nn.Module):
                 device = "cpu",
                 architecture_sampling_mode = "biased",
                 multi_gpu = True,
-                state_conditioned_std = False,
+                std_mode = 'single',
                 ):
         super().__init__()
 
@@ -30,7 +35,8 @@ class hyperActor(nn.Module):
         self.meta_batch_size = meta_batch_size
         self.architecture_sampling_mode = architecture_sampling_mode
         self.multi_gpu = multi_gpu
-        self.stat_conditioned_std = state_conditioned_std
+        assert std_mode in ['single', 'multi', 'arch_conditioned'], "std_mode must be one of ['single', 'multi', 'arch_conditioned']"
+        self.std_mode = std_mode
 
         
         # initialize all devices for parallelization on multiple GPUs
@@ -45,18 +51,30 @@ class hyperActor(nn.Module):
         # initialize the GHN
         self._initialize_ghn(self.obs_dim, self.act_dim)
 
-    #     # initialize standard deviation vectors
-    #     self._initialize_std()
+        # initialize standard deviation vectors
+        self._initialize_std()
         
 
-    # def _initialize_std(self):
-    #     ''' Initializes the standard deviation vectors
-    #     '''
-    #     if not self.stat_conditioned_std:
-    #         self.log_std = nn.ModuleList([
-    #             nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
-    #         for _ in range(self.meta_batch_size)
-    #         ])
+    def _initialize_std(self):
+        ''' Initializes the standard deviation vectors
+        '''
+        if self.std_mode == 'single':
+            self.log_std = nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
+        elif self.std_mode == 'multi':
+            self.log_std = nn.ModuleList([
+                nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
+            for _ in range(self.meta_batch_size)
+            ])
+        elif self.std_mode == 'arch_conditioned':
+            self.log_std = nn.Sequential(
+                    layer_init(nn.Linear(self.arch_max_len, 64)),
+                    nn.Tanh(),
+                    layer_init(nn.Linear(64, 64)),
+                    nn.Tanh(),
+                    layer_init(nn.Linear(64, 1), std=1.0),
+                )
+        else:
+            raise NotImplementedError  
 
 
     def _initialize_architecture_smapling_data(self):
@@ -253,17 +271,15 @@ class hyperActor(nn.Module):
         else:
             x = torch.cat(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net] for i in range(len(self.current_model))]))
         
-
         mu = x
-        log_std = None
+        action_logstd = self.get_logstd(state, mu)
 
+        return mu, action_logstd    
 
-        # log_std = torch.clamp(log_std, self.min_log_std, self.max_log_std)        
-        return mu, log_std    
-
-
-
-
+    def get_logstd(self, state, mu):
+        if self.std_mode == 'single':
+            action_logstd = self.log_std.expand_as(mu)
+            return action_logstd
 
 
     ############################################################### forward helper functions, mostly only for debugging purposes ######################################################

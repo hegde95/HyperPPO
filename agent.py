@@ -20,7 +20,7 @@ class Agent(nn.Module):
                  meta_batch_size = 8, 
                  arch_conditional_critic = False, 
                  dual_critic = False, 
-                 state_conditioned_std = False, 
+                 std_mode = False, 
                  multi_gpu = False, 
                  architecture_sampling = 'biased'
                  ):
@@ -28,12 +28,13 @@ class Agent(nn.Module):
         self.hyper = hyper
         self.arch_conditional_critic = arch_conditional_critic
         self.dual_critic = dual_critic
-        self.state_conditioned_std = state_conditioned_std
+        self.std_mode = std_mode
 
         if self.hyper:
             self.actor_mean = hyperActor(np.prod(envs.single_action_space.shape), np.array(envs.single_observation_space.shape).prod(), np.array([4,8,16,32,64,128,256]), \
-                                         meta_batch_size = meta_batch_size, device=device, multi_gpu=multi_gpu, architecture_sampling_mode=architecture_sampling)
+                                         meta_batch_size = meta_batch_size, device=device, multi_gpu=multi_gpu, architecture_sampling_mode=architecture_sampling, std_mode = self.std_mode)
             self.actor_mean.change_graph()
+            self.actor_logstd = self.actor_mean.log_std
 
             self.critic = nn.Sequential(
                 layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod() + arch_conditional_critic*self.actor_mean.arch_max_len, 64)),
@@ -64,6 +65,7 @@ class Agent(nn.Module):
                 nn.ReLU(),                
                 layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
             )
+            self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
             self.critic = nn.Sequential(
                 layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
                 nn.Tanh(),
@@ -71,7 +73,6 @@ class Agent(nn.Module):
                 nn.Tanh(),
                 layer_init(nn.Linear(64, 1), std=1.0),
             )            
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
     def get_value(self, x):
         if self.hyper and self.arch_conditional_critic:
@@ -84,7 +85,7 @@ class Agent(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         if self.hyper:
-            action_mean, actor_logstd = self.actor_mean(x)
+            action_mean, action_logstd = self.actor_mean(x)
             if self.arch_conditional_critic:
                 value = self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
 
@@ -95,12 +96,9 @@ class Agent(nn.Module):
                 value = self.critic(x)
         else:
             action_mean = self.actor_mean(x)
+            action_logstd = self.actor_logstd.expand_as(action_mean)
             value = self.critic(x)
 
-        if self.state_conditioned_std:
-            action_logstd = actor_logstd
-        else:
-            action_logstd = self.actor_logstd.expand_as(action_mean)
         action_std = torch.exp(action_logstd)
         probs = Normal(action_mean, action_std)
         if action is None:

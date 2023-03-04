@@ -33,8 +33,11 @@ def parse_args():
         help="Enable architecture conditional critic")
     parser.add_argument("--dual_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Enable dual critic")
-    parser.add_argument("--state_conditioned_std", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="Enable state conditioned std")
+    parser.add_argument("--std_mode", type=str, default="single",
+        help="Get action std from either \
+            (single: use same log_std vector for all architectures, \
+             multi: use different log_std vector for each architecture, \
+             arch_conditioned: Log std is conditioned on architecture with an MLP)")
     parser.add_argument("--multi_gpu", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Enable multi gpu training for the GHN. Enable this only if meta_batch_size is larger than 32 for a speedup, otherwise it will be slower.")
     parser.add_argument("--architecture_sampling", type=str, default="biased",
