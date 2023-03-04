@@ -61,10 +61,11 @@ class hyperActor(nn.Module):
         if self.std_mode == 'single':
             self.log_std = nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
         elif self.std_mode == 'multi':
-            self.log_std = nn.ModuleList([
+            self.log_std = nn.ParameterList([
                 nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
-            for _ in range(self.meta_batch_size)
+            for index in self.list_of_arc_indices
             ])
+            pass
         elif self.std_mode == 'arch_conditioned':
             self.log_std = nn.Sequential(
                     layer_init(nn.Linear(self.arch_max_len, 64)),
@@ -115,6 +116,8 @@ class hyperActor(nn.Module):
 
         self.list_of_arc_indices = np.arange(len(self.list_of_arcs))
         self.all_models = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = self.act_dim) for index in self.list_of_arc_indices]
+        # if self.std_mode == "multi":
+        #     self.log_std = nn.ParameterList([nn.Parameter(torch.zeros(1, np.prod(self.act_dim))) for index in self.list_of_arc_indices])
         # shuffle the list of arcs indices
         np.random.shuffle(self.list_of_arc_indices)
 
@@ -240,6 +243,9 @@ class hyperActor(nn.Module):
             self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
             self.current_model = [self.all_models[i] for i in self.sampled_indices]
             # self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
+
+            if self.std_mode == 'multi':
+                self.current_std = [self.log_std[i] for i in self.sampled_indices]
             
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
@@ -272,14 +278,17 @@ class hyperActor(nn.Module):
             x = torch.cat(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net] for i in range(len(self.current_model))]))
         
         mu = x
-        action_logstd = self.get_logstd(state, mu)
+        action_logstd = self.get_logstd(state, mu, batch_per_net)
 
         return mu, action_logstd    
 
-    def get_logstd(self, state, mu):
+    def get_logstd(self, state, mu, batch_per_net):
         if self.std_mode == 'single':
-            action_logstd = self.log_std.expand_as(mu)
-            return action_logstd
+            return self.log_std.expand_as(mu)
+            
+        elif self.std_mode == 'multi':
+            return torch.cat([current_std_.expand(batch_per_net,6) for current_std_ in self.current_std])
+
 
 
     ############################################################### forward helper functions, mostly only for debugging purposes ######################################################
