@@ -17,22 +17,20 @@ class hyperActor(nn.Module):
                 act_dim, 
                 obs_dim, 
                 allowable_layers, 
-                search = False, 
-                conditional = True, 
                 meta_batch_size = 1,
                 device = "cpu",
                 architecture_sampling_mode = "biased",
                 multi_gpu = True,
+                state_conditioned_std = False,
                 ):
         super().__init__()
 
         self.act_dim = act_dim
         self.obs_dim = obs_dim
-        self.is_search = search
-        self.conditional = conditional
         self.meta_batch_size = meta_batch_size
         self.architecture_sampling_mode = architecture_sampling_mode
         self.multi_gpu = multi_gpu
+        self.stat_conditioned_std = state_conditioned_std
 
         
         # initialize all devices for parallelization on multiple GPUs
@@ -46,7 +44,19 @@ class hyperActor(nn.Module):
 
         # initialize the GHN
         self._initialize_ghn(self.obs_dim, self.act_dim)
+
+    #     # initialize standard deviation vectors
+    #     self._initialize_std()
         
+
+    # def _initialize_std(self):
+    #     ''' Initializes the standard deviation vectors
+    #     '''
+    #     if not self.stat_conditioned_std:
+    #         self.log_std = nn.ModuleList([
+    #             nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
+    #         for _ in range(self.meta_batch_size)
+    #         ])
 
 
     def _initialize_architecture_smapling_data(self):
@@ -210,7 +220,9 @@ class hyperActor(nn.Module):
             self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]
 
             self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
-            self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
+            self.current_model = [self.all_models[i] for i in self.sampled_indices]
+            # self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
+            
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
         
