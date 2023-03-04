@@ -96,7 +96,7 @@ class hyperActor(nn.Module):
         self._initialize_shape_inds()
 
         self.list_of_arc_indices = np.arange(len(self.list_of_arcs))
-        self.all_models = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.list_of_arc_indices]
+        self.all_models = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = self.act_dim) for index in self.list_of_arc_indices]
         # shuffle the list of arcs indices
         np.random.shuffle(self.list_of_arc_indices)
 
@@ -113,8 +113,8 @@ class hyperActor(nn.Module):
             for layer in arc:
                 shape_ind.append(torch.tensor(layer).type(torch.FloatTensor).to(self.device))
                 shape_ind.append(torch.tensor(layer).type(torch.FloatTensor).to(self.device))
-            shape_ind.append(torch.tensor(self.act_dim * 2).type(torch.FloatTensor).to(self.device))
-            shape_ind.append(torch.tensor(self.act_dim * 2).type(torch.FloatTensor).to(self.device))
+            shape_ind.append(torch.tensor(self.act_dim).type(torch.FloatTensor).to(self.device))
+            shape_ind.append(torch.tensor(self.act_dim).type(torch.FloatTensor).to(self.device))
             shape_ind = torch.stack(shape_ind).view(-1,1)
             self.list_of_shape_inds.append(shape_ind) 
 
@@ -151,7 +151,7 @@ class hyperActor(nn.Module):
 
         config = {}
         config['max_shape'] = (256, 256, 1, 1)
-        config['num_classes'] = 4 * act_dim
+        config['num_classes'] = 2 * act_dim
         config['num_observations'] = obs_dim
         config['weight_norm'] = True
         config['ve'] = 1 > 1
@@ -180,7 +180,7 @@ class hyperActor(nn.Module):
         ct += ((self.obs_dim + 1) *net[0])
         for i in range(len(net)-1):
             ct += ((net[i] + 1) * net[i+1])
-        ct += ((net[-1] +1) * 2 * self.act_dim)
+        ct += ((net[-1] +1) * self.act_dim)
         return ct            
 
     def sample_arc_indices(self, mode = 'sequential'):
@@ -254,12 +254,8 @@ class hyperActor(nn.Module):
             x = torch.cat(parallel_apply(self.current_model, [state[i*batch_per_net:(i+1)*batch_per_net] for i in range(len(self.current_model))]))
         
 
-        if len(x.shape) == 1:    
-            mu = x[:x.shape[-1]//2]
-            log_std = x[x.shape[-1]//2:]
-        else:
-            mu = x[:,:x.shape[-1]//2]
-            log_std = x[:,x.shape[-1]//2:]
+        mu = x
+        log_std = None
 
 
         # log_std = torch.clamp(log_std, self.min_log_std, self.max_log_std)        
