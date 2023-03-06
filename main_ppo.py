@@ -185,24 +185,26 @@ if __name__ == "__main__":
         optimizer.load_state_dict(torch.load(f"runs/{run_name}/optimizer.pt"))
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    length_of_data = args.num_steps
+    width_of_data = args.num_envs
+
+    obs = torch.zeros((length_of_data, width_of_data) + envs.single_observation_space.shape).to(device)
+    actions = torch.zeros((length_of_data, width_of_data) + envs.single_action_space.shape).to(device)
+    logprobs = torch.zeros((length_of_data, width_of_data)).to(device)
+    rewards = torch.zeros((length_of_data, width_of_data)).to(device)
+    dones = torch.zeros((length_of_data, width_of_data)).to(device)
+    values = torch.zeros((length_of_data, width_of_data)).to(device)
     if args.hyper:
-        # policy_shapes = torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.arch_max_len,)).to(device)
-        # policy_shape_inds = -1 + torch.zeros((args.num_steps, args.num_envs) + (agent.actor_mean.shape_inds_max_len,)).to(device)
-        # policy_indices = torch.zeros((args.num_steps, args.num_envs)).to(device)
+        policy_shapes = torch.zeros((length_of_data, width_of_data) + (agent.actor_mean.arch_max_len,)).to(device)
+        policy_shape_inds = -1 + torch.zeros((length_of_data, width_of_data) + (agent.actor_mean.shape_inds_max_len,)).to(device)
+        policy_indices = torch.zeros((length_of_data, width_of_data)).to(device)
 
         if args.dual_critic:
-            values2 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+            values2 = torch.zeros((length_of_data, width_of_data)).to(device)
 
     # TRY NOT TO MODIFY: start the game
-    start_time = time.time()
     next_obs = envs.reset().to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
+    next_done = torch.zeros(width_of_data).to(device)
     num_updates = args.total_timesteps // args.batch_size
 
 	
@@ -240,6 +242,7 @@ if __name__ == "__main__":
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        start_time = time.time()
         for step in range(0, args.num_steps):
             global_step += 1 * args.num_envs
             # next_obs = envs.reset().to(device)
@@ -249,7 +252,7 @@ if __name__ == "__main__":
             # ALGO LOGIC: action logic
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
-                if args.dual_critic:
+                if args.hyper and args.dual_critic:
                     value,value2 = value
                     values[step] = value.flatten()
                     values2[step] = value2.flatten()
@@ -257,10 +260,10 @@ if __name__ == "__main__":
                     values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-            # if args.hyper:
-                # policy_shapes[step] = agent.actor_mean.arch_per_state_dim
-                # policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
-                # policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim            
+            if args.hyper:
+                policy_shapes[step] = agent.actor_mean.arch_per_state_dim
+                policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
+                policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim            
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
@@ -291,21 +294,21 @@ if __name__ == "__main__":
                 envs.total_reward = torch.zeros((envs.num_envs,)).to('cuda:0')
                 break
         
-        # if args.hyper:
-        #     final_policy_shape = agent.actor_mean.arch_per_state_dim
-        #     final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
-        #     final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
+        if args.hyper:
+            final_policy_shape = agent.actor_mean.arch_per_state_dim
+            final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
+            final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
         
         
         # bootstrap value if not done
         with torch.no_grad():
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            if args.dual_critic:
+            if args.hyper and args.dual_critic:
                 advantages2 = torch.zeros_like(rewards).to(device)
                 lastgaelam2 = 0
 
-                next_value, next_value2 = agent.get_value(next_obs)
+                next_value, next_value2 = agent.get_value(next_obs, final_policy_shape)
                 next_value = next_value.reshape(1, -1)
                 next_value2 = next_value2.reshape(1, -1)
             else:
@@ -341,9 +344,9 @@ if __name__ == "__main__":
 
 	
         if args.hyper:
-            # b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
-            # b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
-            # b_policy_indices = policy_indices[:step+1].reshape(-1)
+            b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_indices = policy_indices[:step+1].reshape(-1)
 
             if args.dual_critic:
                 b_advantages2 = advantages2[:step+1].swapaxes(0,1).reshape(-1)
@@ -380,9 +383,9 @@ if __name__ == "__main__":
                 mb_values = b_values[mb_inds] 
 
                 if args.hyper:
-                    # mb_policy_shapes = b_policy_shapes[mb_inds]
-                    # mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
-                    # mb_policy_indices = b_policy_indices[mb_inds] 
+                    mb_policy_shapes = b_policy_shapes[mb_inds]
+                    mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
+                    mb_policy_indices = b_policy_indices[mb_inds] 
 
                     if args.dual_critic:
                         mb_advantages2 = b_advantages2[mb_inds]
@@ -392,13 +395,14 @@ if __name__ == "__main__":
                 if args.hyper:
                     agent.actor_mean.change_graph(repeat_sample = True)
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions)
+                _, newlogprob, entropy = agent.get_action(mb_obs, mb_actions)
+                newvalue = agent.get_value(mb_obs, mb_policy_shapes)
                 
                 if args.hyper and args.dual_critic:
                     newvalue, newvalue2 = newvalue
 
-                # if args.hyper:
-                #     assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes).all(), "arch_per_state_dim != mb_policy_shapes"
+                if args.hyper:
+                    assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes).all(), "arch_per_state_dim != mb_policy_shapes"
                 
                 logratio = newlogprob - mb_logprobs
                 ratio = logratio.exp()

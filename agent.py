@@ -74,14 +74,28 @@ class Agent(nn.Module):
                 layer_init(nn.Linear(64, 1), std=1.0),
             )            
 
-    def get_value(self, x):
+    def get_value(self, x, architectures = None):
         if self.hyper and self.arch_conditional_critic:
             if self.dual_critic:
-                return (self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1)), self.critic2(x))
+                return (self.critic(torch.cat([x, architectures if architectures is not None else self.actor_mean.arch_per_state_dim], dim = 1)), self.critic2(x))
             else:
-                return self.critic(torch.cat([x, self.actor_mean.arch_per_state_dim], dim = 1))
+                return self.critic(torch.cat([x, architectures if architectures is not None else self.actor_mean.arch_per_state_dim], dim = 1))
         else:
             return self.critic(x)
+
+    def get_action(self, x, action = None):
+        if self.hyper:
+            action_mean, action_logstd = self.actor_mean(x)
+        else:
+            action_mean = self.actor_mean(x)
+            action_logstd = self.actor_logstd.expand_as(action_mean)
+
+        action_std = torch.exp(action_logstd)
+        probs = Normal(action_mean, action_std)
+        if action is None:
+            action = probs.sample()
+
+        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1)        
 
     def get_action_and_value(self, x, action=None):
         if self.hyper:
