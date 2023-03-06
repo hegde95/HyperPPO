@@ -188,11 +188,15 @@ if __name__ == "__main__":
     length_of_data = args.num_steps
     width_of_data = args.num_envs
 
-    obs = torch.zeros((length_of_data, width_of_data) + envs.single_observation_space.shape).to(device)
+    
+    length_of_data = int(length_of_data // args.num_episode_splits)
+    width_of_data = int(width_of_data * args.num_episode_splits)
+
+    obs = torch.zeros((length_of_data + 1, width_of_data) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((length_of_data, width_of_data) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((length_of_data, width_of_data)).to(device)
     rewards = torch.zeros((length_of_data, width_of_data)).to(device)
-    dones = torch.zeros((length_of_data, width_of_data)).to(device)
+    dones = torch.zeros((length_of_data + 1, width_of_data)).to(device)
     values = torch.zeros((length_of_data, width_of_data)).to(device)
     if args.hyper:
         policy_shapes = torch.zeros((length_of_data, width_of_data) + (agent.actor_mean.arch_max_len,)).to(device)
@@ -204,7 +208,7 @@ if __name__ == "__main__":
 
     # TRY NOT TO MODIFY: start the game
     next_obs = envs.reset().to(device)
-    next_done = torch.zeros(width_of_data).to(device)
+    next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
 
 	
@@ -242,50 +246,45 @@ if __name__ == "__main__":
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        split_index = 0
+        split_step = 0
         start_time = time.time()
         for step in range(0, args.num_steps):
-            global_step += 1 * args.num_envs
             # next_obs = envs.reset().to(device)
-            obs[step] = next_obs
-            dones[step] = next_done
+            obs[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_obs
+            dones[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_done
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
                 if args.hyper and args.dual_critic:
                     value,value2 = value
-                    values[step] = value.flatten()
-                    values2[step] = value2.flatten()
+                    values[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = value.flatten()
+                    values2[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = value2.flatten()
                 else:
-                    values[step] = value.flatten()
-            actions[step] = action
-            logprobs[step] = logprob
+                    values[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = value.flatten()
+            actions[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = action
+            logprobs[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = logprob
             if args.hyper:
-                policy_shapes[step] = agent.actor_mean.arch_per_state_dim
-                policy_shape_inds[step] = agent.actor_mean.shape_ind_per_state_dim
-                policy_indices[step] = agent.actor_mean.sampled_indices_per_state_dim            
+                policy_shapes[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.arch_per_state_dim
+                policy_shape_inds[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.shape_ind_per_state_dim
+                policy_indices[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.sampled_indices_per_state_dim            
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
             # done = terminated | truncated
-            rewards[step] = reward.to(device).view(-1)
+            rewards[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = reward.to(device).view(-1)
             next_obs, next_done = next_obs.to(device), done.to(device)
 
-            # if "episode" in info.keys():
-            #     avg_ep_reward = np.mean([info['episode'][k]['r'] for k in range(args.num_envs)])
-            #     avg_ep_length = np.mean([info['episode'][k]['l'] for k in range(args.num_envs)])
-            #     print(f"global_step={global_step}, episodic_return={avg_ep_reward}")
-            #     writer.add_scalar("charts/episodic_return", avg_ep_reward, global_step)
-            #     writer.add_scalar("charts/episodic_length", avg_ep_length, global_step)
+            split_step+=1
+            global_step += 1 * args.num_envs
 
+            if split_step == length_of_data:
+                obs[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_obs
+                dones[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_done
 
-                # break
-
-                # for k in range(args.num_envs):
-                #     print(f"global_step={global_step}, episodic_return={info['episode'][k]['r']}")
-                #     writer.add_scalar("charts/episodic_return", info['episode'][k]["r"], global_step)
-                #     writer.add_scalar("charts/episodic_length", info['episode'][k]["l"], global_step)
-                #     break
+                split_index += 1
+                split_step = 0
 
             if done.any():
                 print(f"global_step={global_step}, episodic_return={envs.total_reward.cpu().numpy().mean()}")
@@ -294,30 +293,28 @@ if __name__ == "__main__":
                 envs.total_reward = torch.zeros((envs.num_envs,)).to('cuda:0')
                 break
         
-        if args.hyper:
-            final_policy_shape = agent.actor_mean.arch_per_state_dim
-            final_policy_shape_inds = agent.actor_mean.shape_ind_per_state_dim
-            final_policy_indices = agent.actor_mean.sampled_indices_per_state_dim
-        
         
         # bootstrap value if not done
         with torch.no_grad():
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            if args.hyper and args.dual_critic:
-                advantages2 = torch.zeros_like(rewards).to(device)
-                lastgaelam2 = 0
+            if args.hyper:
+                if args.dual_critic:
+                    advantages2 = torch.zeros_like(rewards).to(device)
+                    lastgaelam2 = 0
 
-                next_value, next_value2 = agent.get_value(next_obs, final_policy_shape)
-                next_value = next_value.reshape(1, -1)
-                next_value2 = next_value2.reshape(1, -1)
+                    next_value, next_value2 = agent.get_value(obs[-1], policy_shapes[-1])
+                    next_value = next_value.reshape(1, -1)
+                    next_value2 = next_value2.reshape(1, -1)
+                else:
+                    next_value = agent.get_value(obs[-1], policy_shapes[-1]).reshape(1, -1)
             else:
-                next_value = agent.get_value(next_obs).reshape(1, -1)
-            for t in reversed(range(step + 1)):
-                if t == step:
-                    nextnonterminal = 1.0 - next_done
+                next_value = agent.get_value(obs[-1]).reshape(1, -1)
+            for t in reversed(range(length_of_data)):
+                if t == (length_of_data-1):
+                    nextnonterminal = 1.0 - dones[-1]
                     nextvalues = next_value
-                    if args.dual_critic:
+                    if args.hyper and args.dual_critic:
                         nextvalues2 = next_value2
                 else:
                     nextnonterminal = 1.0 - dones[t + 1]
@@ -335,35 +332,36 @@ if __name__ == "__main__":
                 returns2 = advantages2 + values2
 
         # flatten the batch
-        b_obs = obs[:step+1].swapaxes(0,1).reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs[:step+1].swapaxes(0,1).reshape(-1)
-        b_actions = actions[:step+1].swapaxes(0,1).reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages[:step+1].swapaxes(0,1).reshape(-1)
-        b_returns = returns[:step+1].swapaxes(0,1).reshape(-1)
-        b_values = values[:step+1].swapaxes(0,1).reshape(-1)
+        b_obs = obs[:length_of_data].swapaxes(0,1).reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs[:length_of_data].swapaxes(0,1).reshape(-1)
+        b_actions = actions[:length_of_data].swapaxes(0,1).reshape((-1,) + envs.single_action_space.shape)
+        b_advantages = advantages[:length_of_data].swapaxes(0,1).reshape(-1)
+        b_returns = returns[:length_of_data].swapaxes(0,1).reshape(-1)
+        b_values = values[:length_of_data].swapaxes(0,1).reshape(-1)
 
 	
         if args.hyper:
-            b_policy_shapes = policy_shapes[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
-            b_policy_shape_inds = policy_shape_inds[:step+1].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
-            b_policy_indices = policy_indices[:step+1].reshape(-1)
+            b_policy_shapes = policy_shapes[:length_of_data].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shape_inds = policy_shape_inds[:length_of_data].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
+            b_policy_indices = policy_indices[:length_of_data].reshape(-1)
 
             if args.dual_critic:
-                b_advantages2 = advantages2[:step+1].swapaxes(0,1).reshape(-1)
-                b_returns2 = returns2[:step+1].swapaxes(0,1).reshape(-1)
-                b_values2 = values2[:step+1].swapaxes(0,1).reshape(-1)
+                b_advantages2 = advantages2[:length_of_data].swapaxes(0,1).reshape(-1)
+                b_returns2 = returns2[:length_of_data].swapaxes(0,1).reshape(-1)
+                b_values2 = values2[:length_of_data].swapaxes(0,1).reshape(-1)
 
 
-            num_envs_per_arch = int(args.num_envs / args.meta_batch_size)
+            num_envs_per_arch = int(width_of_data / args.meta_batch_size)
 
         # Optimizing the policy and value network
         if args.hyper and not args.enable_arch_mixing:
-            batch_size = int(num_envs_per_arch * (step + 1))
+            batch_size = int(num_envs_per_arch * (length_of_data))
         else:
-            batch_size = int(args.num_envs * (step + 1))
+            batch_size = int(width_of_data * (length_of_data))
         minibatch_size = int(batch_size  // args.num_minibatches)
-        # make minibatch_size multiple of (meta_batch_size)
-        minibatch_size = minibatch_size - minibatch_size % args.meta_batch_size
+        if args.hyper:
+            # make minibatch_size multiple of (meta_batch_size)
+            minibatch_size = minibatch_size - minibatch_size % args.meta_batch_size
         b_inds = np.arange(batch_size)
         clipfracs = []
         for epoch in range(args.update_epochs):
@@ -396,10 +394,13 @@ if __name__ == "__main__":
                     agent.actor_mean.change_graph(repeat_sample = True)
 
                 _, newlogprob, entropy = agent.get_action(mb_obs, mb_actions)
-                newvalue = agent.get_value(mb_obs, mb_policy_shapes)
+                if args.hyper:
+                    newvalue = agent.get_value(mb_obs, mb_policy_shapes)
+                    if args.dual_critic:
+                        newvalue, newvalue2 = newvalue
+                else:
+                    newvalue = agent.get_value(mb_obs)
                 
-                if args.hyper and args.dual_critic:
-                    newvalue, newvalue2 = newvalue
 
                 if args.hyper:
                     assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes).all(), "arch_per_state_dim != mb_policy_shapes"
