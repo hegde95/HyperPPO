@@ -33,7 +33,7 @@ def parse_args():
         help="Enable architecture conditional critic")
     parser.add_argument("--dual_critic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Enable dual critic")
-    parser.add_argument("--std_mode", type=str, default="single",
+    parser.add_argument("--std_mode", type=str, default="multi",
         help="Get action std from either \
             (single: use same log_std vector for all architectures, \
              multi: use different log_std vector for each architecture, \
