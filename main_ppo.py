@@ -287,16 +287,15 @@ if __name__ == "__main__":
                 obs[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_obs
                 dones[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_done
 
-                policy_shapes_tracker.append(agent.actor_mean.current_archs)
-                policy_shape_inds_tracker.append(agent.actor_mean.sampled_shape_inds)
-                policy_indices_tracker.append(agent.actor_mean.sampled_indices)
+                if args.hyper:
+                    policy_shapes_tracker.append(agent.actor_mean.current_archs)
+                    policy_shape_inds_tracker.append(agent.actor_mean.sampled_shape_inds)
+                    policy_indices_tracker.append(agent.actor_mean.sampled_indices)
 
+                    agent.actor_mean.change_graph(repeat_sample=False)
 
                 split_index += 1
                 split_step = 0
-
-                if args.hyper:
-                    agent.actor_mean.change_graph(repeat_sample=False)
 
 
             if done.any():
@@ -528,6 +527,7 @@ if __name__ == "__main__":
                     pg_loss1 = -mb_advantages * ratio
                     pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                    pg_loss_total = pg_loss
 
                     # Value loss
                     newvalue = newvalue.view(-1)
@@ -543,6 +543,7 @@ if __name__ == "__main__":
                         v_loss = 0.5 * v_loss_max.mean()
                     else:
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
+                    v_loss_total = v_loss
 
                     entropy_loss = entropy.mean()
                     loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
