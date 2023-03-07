@@ -42,7 +42,7 @@ def parse_args():
         help="Enable multi gpu training for the GHN. Enable this only if meta_batch_size is larger than 32 for a speedup, otherwise it will be slower.")
     parser.add_argument("--architecture_sampling", type=str, default="biased",
                         help="the architecture sampling method, has to be in [biased, uniform, sequential]")
-    parser.add_argument("--num_episode_splits", type=int, default=1,
+    parser.add_argument("--num_episode_splits", type=int, default=8,
                         help="the number of architecture changes per episode")
 
     # Algorithm specific arguments
@@ -62,7 +62,7 @@ def parse_args():
         help="the discount factor gamma")
     parser.add_argument("--gae-lambda", type=float, default=0.95,
         help="the lambda for the general advantage estimation")
-    parser.add_argument("--num-minibatches", type=int, default=32,
+    parser.add_argument("--num-minibatches", type=int, default=4,
         help="the number of mini-batches")
     parser.add_argument("--update-epochs", type=int, default=10,
         help="the K epochs to update the policy")

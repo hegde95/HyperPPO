@@ -201,9 +201,13 @@ class hyperActor(nn.Module):
             weights for those architectures and set it to the current model
         '''
         self.sampled_indices = indices_vector
-        sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
+        # self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
+        self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
+        self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]   
+        self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)
         self.current_model = [self.all_models[i] for i in self.sampled_indices]
-        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = sampled_shape_inds)
+        self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device)
+        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
 
 
     def get_params(self, net):
@@ -268,8 +272,8 @@ class hyperActor(nn.Module):
                 sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device]).view(-1,1)
                 _, embeddings = self.multi_ghns[i](self.current_model[i*self.num_current_models_per_device:(i+1)*self.num_current_models_per_device], return_embeddings=True, shape_ind = sampled_shape_inds.to(device))
         else:
-            sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)
-            _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = sampled_shape_inds)
+            self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)
+            _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
 
 
     def forward(self, state, track=True):

@@ -199,7 +199,7 @@ if __name__ == "__main__":
     dones = torch.zeros((length_of_data + 1, width_of_data)).to(device)
     values = torch.zeros((length_of_data, width_of_data)).to(device)
     if args.hyper:
-        policy_shapes = torch.zeros((length_of_data, width_of_data) + (agent.actor_mean.arch_max_len,)).to(device)
+        policy_shapes_per_state_dim = torch.zeros((length_of_data, width_of_data) + (agent.actor_mean.arch_max_len,)).to(device)
         policy_shape_inds = -1 + torch.zeros((length_of_data, width_of_data) + (agent.actor_mean.shape_inds_max_len,)).to(device)
         policy_indices = torch.zeros((length_of_data, width_of_data)).to(device)
 
@@ -248,6 +248,10 @@ if __name__ == "__main__":
 
         split_index = 0
         split_step = 0
+        policy_shapes_tracker = []
+        policy_shape_inds_tracker = []
+        policy_indices_tracker = []
+
         start_time = time.time()
         for step in range(0, args.num_steps):
             # next_obs = envs.reset().to(device)
@@ -266,7 +270,7 @@ if __name__ == "__main__":
             actions[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = action
             logprobs[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = logprob
             if args.hyper:
-                policy_shapes[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.arch_per_state_dim
+                policy_shapes_per_state_dim[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.arch_per_state_dim
                 policy_shape_inds[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.shape_ind_per_state_dim
                 policy_indices[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = agent.actor_mean.sampled_indices_per_state_dim            
 
@@ -283,8 +287,17 @@ if __name__ == "__main__":
                 obs[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_obs
                 dones[split_step,split_index*args.num_envs:(split_index+1)*args.num_envs] = next_done
 
+                policy_shapes_tracker.append(agent.actor_mean.current_archs)
+                policy_shape_inds_tracker.append(agent.actor_mean.sampled_shape_inds)
+                policy_indices_tracker.append(agent.actor_mean.sampled_indices)
+
+
                 split_index += 1
                 split_step = 0
+
+                if args.hyper:
+                    agent.actor_mean.change_graph(repeat_sample=False)
+
 
             if done.any():
                 print(f"global_step={global_step}, episodic_return={envs.total_reward.cpu().numpy().mean()}")
@@ -303,11 +316,11 @@ if __name__ == "__main__":
                     advantages2 = torch.zeros_like(rewards).to(device)
                     lastgaelam2 = 0
 
-                    next_value, next_value2 = agent.get_value(obs[-1], policy_shapes[-1])
+                    next_value, next_value2 = agent.get_value(obs[-1], policy_shapes_per_state_dim[-1])
                     next_value = next_value.reshape(1, -1)
                     next_value2 = next_value2.reshape(1, -1)
                 else:
-                    next_value = agent.get_value(obs[-1], policy_shapes[-1]).reshape(1, -1)
+                    next_value = agent.get_value(obs[-1], policy_shapes_per_state_dim[-1]).reshape(1, -1)
             else:
                 next_value = agent.get_value(obs[-1]).reshape(1, -1)
             for t in reversed(range(length_of_data)):
@@ -341,7 +354,7 @@ if __name__ == "__main__":
 
 	
         if args.hyper:
-            b_policy_shapes = policy_shapes[:length_of_data].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
+            b_policy_shapes_per_state_dim = policy_shapes_per_state_dim[:length_of_data].swapaxes(0,1).reshape((-1,agent.actor_mean.arch_max_len))
             b_policy_shape_inds = policy_shape_inds[:length_of_data].swapaxes(0,1).reshape((-1,agent.actor_mean.shape_inds_max_len))
             b_policy_indices = policy_indices[:length_of_data].reshape(-1)
 
@@ -351,134 +364,197 @@ if __name__ == "__main__":
                 b_values2 = values2[:length_of_data].swapaxes(0,1).reshape(-1)
 
 
-            num_envs_per_arch = int(width_of_data / args.meta_batch_size)
+            num_envs_per_arch = int(args.num_envs / args.meta_batch_size)
 
-        # Optimizing the policy and value network
-        if args.hyper and not args.enable_arch_mixing:
-            batch_size = int(num_envs_per_arch * (length_of_data))
-        else:
-            batch_size = int(width_of_data * (length_of_data))
-        minibatch_size = int(batch_size  // args.num_minibatches)
+
+
+
         if args.hyper:
-            # make minibatch_size multiple of (meta_batch_size)
+            # Optimizing the policy and value network
+            batch_size = int(num_envs_per_arch * (length_of_data))
+            minibatch_size = int(batch_size  // args.num_minibatches)
             minibatch_size = minibatch_size - minibatch_size % args.meta_batch_size
-        b_inds = np.arange(batch_size)
-        clipfracs = []
-        for epoch in range(args.update_epochs):
-            np.random.shuffle(b_inds)
-            for start in range(0, batch_size, minibatch_size):
-                end = start + minibatch_size
-                if args.hyper and not args.enable_arch_mixing:
-                    mb_inds = np.concatenate([b_inds[start:end] + k*batch_size for k in range(args.meta_batch_size)])
-                else:
+
+            b_inds = np.arange(batch_size)
+            clipfracs = []
+            for epoch in range(args.update_epochs):
+                for split in range(args.num_episode_splits):
+                    np.random.shuffle(b_inds)
+                    for start in range(0, batch_size, minibatch_size):
+                        end = start + minibatch_size
+                        mb_inds = np.concatenate([b_inds[start:end] + k*batch_size for k in range(args.meta_batch_size)])
+                        
+                        mb_inds += split * batch_size * args.meta_batch_size
+
+                        mb_obs = b_obs[mb_inds]
+                        mb_logprobs = b_logprobs[mb_inds]
+                        mb_actions = b_actions[mb_inds]
+                        mb_advantages = b_advantages[mb_inds]
+                        mb_returns = b_returns[mb_inds]
+                        mb_values = b_values[mb_inds] 
+
+
+                        mb_policy_shapes_per_state_dim = b_policy_shapes_per_state_dim[mb_inds]
+                        mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
+                        mb_policy_indices = b_policy_indices[mb_inds] 
+
+                        if args.dual_critic:
+                            mb_advantages2 = b_advantages2[mb_inds]
+                            mb_returns2 = b_returns2[mb_inds]
+                            mb_values2 = b_values2[mb_inds]
+
+                        agent.actor_mean.set_graph(policy_indices_tracker[split], policy_shape_inds_tracker[split])
+                        agent.actor_mean.change_graph(repeat_sample = True)
+
+                        _, newlogprob, entropy = agent.get_action(mb_obs, mb_actions)
+                        newvalue = agent.get_value(mb_obs, mb_policy_shapes_per_state_dim)
+                        if args.dual_critic:
+                            newvalue, newvalue2 = newvalue
+                        
+                        assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes_per_state_dim).all(), "arch_per_state_dim != mb_policy_shapes"
+                        
+                        logratio = newlogprob - mb_logprobs
+                        ratio = logratio.exp()
+
+                        with torch.no_grad():
+                            # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                            old_approx_kl = (-logratio).mean()
+                            approx_kl = ((ratio - 1) - logratio).mean()
+                            clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
+
+                        # mb_advantages = mb_advantages
+                        if args.norm_adv:
+                            mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                            if args.dual_critic:
+                                mb_advantages2 = (mb_advantages2 - mb_advantages2.mean()) / (mb_advantages2.std() + 1e-8)
+
+                        # Policy loss
+                        pg_loss1 = -mb_advantages * ratio
+                        pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                        pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+
+                        if args.dual_critic:
+                            pg_loss2_1 = -mb_advantages2 * ratio
+                            pg_loss2_2 = -mb_advantages2 * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                            pg_loss2 = torch.max(pg_loss2_1, pg_loss2_2).mean()
+
+                            pg_loss_total = pg_loss + pg_loss2
+                        else:
+                            pg_loss_total = pg_loss
+
+                        # Value loss
+                        newvalue = newvalue.view(-1)
+                        if args.clip_vloss:
+                            v_loss_unclipped = (newvalue - mb_returns) ** 2
+                            v_clipped = mb_values + torch.clamp(
+                                newvalue - mb_values,
+                                -args.clip_coef,
+                                args.clip_coef,
+                            )
+                            v_loss_clipped = (v_clipped - mb_returns) ** 2
+                            v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                            v_loss = 0.5 * v_loss_max.mean()
+                        else:
+                            v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
+
+                        if args.dual_critic:
+                            newvalue2 = newvalue2.view(-1)
+                            if args.clip_vloss:
+                                v_loss_unclipped2 = (newvalue2 - mb_returns2) ** 2
+                                v_clipped2 = mb_values2 + torch.clamp(
+                                    newvalue2 - mb_values2,
+                                    -args.clip_coef,
+                                    args.clip_coef,
+                                )
+                                v_loss_clipped2 = (v_clipped2 - mb_returns2) ** 2
+                                v_loss_max2 = torch.max(v_loss_unclipped2, v_loss_clipped2)
+                                v_loss2 = 0.5 * v_loss_max2.mean()
+                            else:
+                                v_loss2 = 0.5 * ((newvalue2 - mb_returns2) ** 2).mean()
+
+                            v_loss_total = v_loss + v_loss2
+                        else:
+                            v_loss_total = v_loss
+
+                        entropy_loss = entropy.mean()
+                        loss = pg_loss_total - args.ent_coef * entropy_loss + v_loss_total * args.vf_coef
+
+                        optimizer.zero_grad()
+                        loss.backward()
+                        nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                        optimizer.step()
+
+                if args.target_kl is not None:
+                    if approx_kl > args.target_kl:
+                        break
+
+        else:
+            # Optimizing the policy and value network
+            batch_size = int(width_of_data * (length_of_data))
+            minibatch_size = int(batch_size  // args.num_minibatches)
+            b_inds = np.arange(batch_size)
+            clipfracs = []
+            for epoch in range(args.update_epochs):
+                np.random.shuffle(b_inds)
+                for start in range(0, batch_size, minibatch_size):
+                    end = start + minibatch_size
                     mb_inds = b_inds[start:end]
 
-                mb_obs = b_obs[mb_inds]
-                mb_logprobs = b_logprobs[mb_inds]
-                mb_actions = b_actions[mb_inds]
-                mb_advantages = b_advantages[mb_inds]
-                mb_returns = b_returns[mb_inds]
-                mb_values = b_values[mb_inds] 
+                    mb_obs = b_obs[mb_inds]
+                    mb_logprobs = b_logprobs[mb_inds]
+                    mb_actions = b_actions[mb_inds]
+                    mb_advantages = b_advantages[mb_inds]
+                    mb_returns = b_returns[mb_inds]
+                    mb_values = b_values[mb_inds] 
 
-                if args.hyper:
-                    mb_policy_shapes = b_policy_shapes[mb_inds]
-                    mb_policy_shape_inds = b_policy_shape_inds[mb_inds]
-                    mb_policy_indices = b_policy_indices[mb_inds] 
-
-                    if args.dual_critic:
-                        mb_advantages2 = b_advantages2[mb_inds]
-                        mb_returns2 = b_returns2[mb_inds]
-                        mb_values2 = b_values2[mb_inds]
-
-                if args.hyper:
-                    agent.actor_mean.change_graph(repeat_sample = True)
-
-                _, newlogprob, entropy = agent.get_action(mb_obs, mb_actions)
-                if args.hyper:
-                    newvalue = agent.get_value(mb_obs, mb_policy_shapes)
-                    if args.dual_critic:
-                        newvalue, newvalue2 = newvalue
-                else:
+                    _, newlogprob, entropy = agent.get_action(mb_obs, mb_actions)
                     newvalue = agent.get_value(mb_obs)
-                
+                    
+                    
+                    logratio = newlogprob - mb_logprobs
+                    ratio = logratio.exp()
 
-                if args.hyper:
-                    assert (agent.actor_mean.arch_per_state_dim == mb_policy_shapes).all(), "arch_per_state_dim != mb_policy_shapes"
-                
-                logratio = newlogprob - mb_logprobs
-                ratio = logratio.exp()
+                    with torch.no_grad():
+                        # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                        old_approx_kl = (-logratio).mean()
+                        approx_kl = ((ratio - 1) - logratio).mean()
+                        clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
 
-                with torch.no_grad():
-                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                    old_approx_kl = (-logratio).mean()
-                    approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
+                    # mb_advantages = mb_advantages
+                    if args.norm_adv:
+                        mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                        
+                    # Policy loss
+                    pg_loss1 = -mb_advantages * ratio
+                    pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                # mb_advantages = mb_advantages
-                if args.norm_adv:
-                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
-                    if args.dual_critic:
-                        mb_advantages2 = (mb_advantages2 - mb_advantages2.mean()) / (mb_advantages2.std() + 1e-8)
-
-                # Policy loss
-                pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-                if args.dual_critic:
-                    pg_loss2_1 = -mb_advantages2 * ratio
-                    pg_loss2_2 = -mb_advantages2 * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                    pg_loss2 = torch.max(pg_loss2_1, pg_loss2_2).mean()
-
-                    pg_loss_total = pg_loss + pg_loss2
-                else:
-                    pg_loss_total = pg_loss
-
-                # Value loss
-                newvalue = newvalue.view(-1)
-                if args.clip_vloss:
-                    v_loss_unclipped = (newvalue - mb_returns) ** 2
-                    v_clipped = mb_values + torch.clamp(
-                        newvalue - mb_values,
-                        -args.clip_coef,
-                        args.clip_coef,
-                    )
-                    v_loss_clipped = (v_clipped - mb_returns) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
-                else:
-                    v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-
-                if args.dual_critic:
-                    newvalue2 = newvalue2.view(-1)
+                    # Value loss
+                    newvalue = newvalue.view(-1)
                     if args.clip_vloss:
-                        v_loss_unclipped2 = (newvalue2 - mb_returns2) ** 2
-                        v_clipped2 = mb_values2 + torch.clamp(
-                            newvalue2 - mb_values2,
+                        v_loss_unclipped = (newvalue - mb_returns) ** 2
+                        v_clipped = mb_values + torch.clamp(
+                            newvalue - mb_values,
                             -args.clip_coef,
                             args.clip_coef,
                         )
-                        v_loss_clipped2 = (v_clipped2 - mb_returns2) ** 2
-                        v_loss_max2 = torch.max(v_loss_unclipped2, v_loss_clipped2)
-                        v_loss2 = 0.5 * v_loss_max2.mean()
+                        v_loss_clipped = (v_clipped - mb_returns) ** 2
+                        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                        v_loss = 0.5 * v_loss_max.mean()
                     else:
-                        v_loss2 = 0.5 * ((newvalue2 - mb_returns2) ** 2).mean()
+                        v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
 
-                    v_loss_total = v_loss + v_loss2
-                else:
-                    v_loss_total = v_loss
+                    entropy_loss = entropy.mean()
+                    loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-                entropy_loss = entropy.mean()
-                loss = pg_loss_total - args.ent_coef * entropy_loss + v_loss_total * args.vf_coef
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                    optimizer.step()
 
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                optimizer.step()
-
-            if args.target_kl is not None:
-                if approx_kl > args.target_kl:
-                    break
+                if args.target_kl is not None:
+                    if approx_kl > args.target_kl:
+                        break
 
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)
