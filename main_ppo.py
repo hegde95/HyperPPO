@@ -238,7 +238,7 @@ if __name__ == "__main__":
         list_of_test_arch_indices = None
         list_of_test_shape_inds = None
         
-
+    exp_start_time = time.time()
     for update in range(starting_update, num_updates + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -598,8 +598,8 @@ if __name__ == "__main__":
         writer.add_scalar("charts/test_reward", test_reward.mean(), global_step)
 
         
-        print("SPS:", int(global_step / (time.time() - start_time)))
-        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+        print("SPS:", int(global_step / (time.time() - exp_start_time)))
+        writer.add_scalar("charts/SPS", int(global_step / (time.time() - exp_start_time)), global_step)
 
         agent.save_model(os.path.join('runs', run_name, 'latest_model'), -1)
         # save optimizer
