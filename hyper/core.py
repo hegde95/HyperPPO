@@ -208,6 +208,8 @@ class hyperActor(nn.Module):
         self.current_model = [self.all_models[i] for i in self.sampled_indices]
         self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device)
         _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        if self.std_mode == 'multi':
+            self.current_std = [self.log_std[i] for i in self.sampled_indices]
 
 
     def get_params(self, net):

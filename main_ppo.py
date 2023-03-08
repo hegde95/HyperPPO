@@ -375,11 +375,13 @@ if __name__ == "__main__":
             minibatch_size = minibatch_size - minibatch_size % args.meta_batch_size
 
             b_inds = np.arange(batch_size)
+            splits_vector = np.arange(args.num_episode_splits)
             clipfracs = []
             for epoch in range(args.update_epochs):
-                for split in range(args.num_episode_splits):
-                    np.random.shuffle(b_inds)
-                    for start in range(0, batch_size, minibatch_size):
+                np.random.shuffle(b_inds)
+                for start in range(0, batch_size, minibatch_size):
+                    np.random.shuffle(splits_vector)
+                    for split in splits_vector:
                         end = start + minibatch_size
                         mb_inds = np.concatenate([b_inds[start:end] + k*batch_size for k in range(args.meta_batch_size)])
                         
