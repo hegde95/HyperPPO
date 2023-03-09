@@ -62,10 +62,9 @@ class hyperActor(nn.Module):
             self.log_std = nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
         elif self.std_mode == 'multi':
             self.log_std = nn.ParameterList([
-                nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
+                nn.Parameter(torch.zeros(1, np.prod(self.act_dim)), requires_grad = False)
             for index in self.list_of_arc_indices
             ])
-            pass
         elif self.std_mode == 'arch_conditioned':
             self.log_std = nn.Sequential(
                     layer_init(nn.Linear(self.arch_max_len, 64)),
@@ -132,6 +131,7 @@ class hyperActor(nn.Module):
         #     self.log_std = nn.ParameterList([nn.Parameter(torch.zeros(1, np.prod(self.act_dim))) for index in self.list_of_arc_indices])
         # shuffle the list of arcs indices
         np.random.shuffle(self.list_of_arc_indices)
+        self.sampled_indices = None
 
 
     def _initialize_shape_inds(self):
@@ -200,6 +200,10 @@ class hyperActor(nn.Module):
             architectures we want to use and the shape indicators for those architectures. Then we estimate the 
             weights for those architectures and set it to the current model
         '''
+        if self.std_mode == 'multi' and self.sampled_indices is not None:
+            for i in self.sampled_indices:
+                self.log_std[i].requires_grad = False
+
         self.sampled_indices = indices_vector
         # self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
         self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
@@ -209,7 +213,11 @@ class hyperActor(nn.Module):
         self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device)
         _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
         if self.std_mode == 'multi':
-            self.current_std = [self.log_std[i] for i in self.sampled_indices]
+            # self.current_std = [self.log_std[i] for i in self.sampled_indices]
+            self.current_std = []
+            for i in self.sampled_indices:
+                self.log_std[i].requires_grad = True
+                self.current_std.append(self.log_std[i])
 
 
     def get_params(self, net):
@@ -253,6 +261,11 @@ class hyperActor(nn.Module):
         '''
         if not repeat_sample:
 
+            if self.std_mode == 'multi' and self.sampled_indices is not None:
+                for i in self.sampled_indices:
+                    self.log_std[i].requires_grad = False
+
+
             self.sample_arc_indices(mode = self.architecture_sampling_mode)
             
             self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
@@ -263,7 +276,11 @@ class hyperActor(nn.Module):
             # self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
 
             if self.std_mode == 'multi':
-                self.current_std = [self.log_std[i] for i in self.sampled_indices]
+                # self.current_std = [self.log_std[i] for i in self.sampled_indices]
+                self.current_std = []
+                for i in self.sampled_indices:
+                    self.log_std[i].requires_grad = True
+                    self.current_std.append(self.log_std[i])
             
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
