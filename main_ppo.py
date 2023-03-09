@@ -29,7 +29,7 @@ def test_agent(envs, agent, device, num_episodes, hyper, max_steps = 1000, list_
         envs.obs_rms = obs_normalizer
     if hyper:
         # agent.actor_mean.change_graph()
-        agent.actor_mean.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
+        agent.actor_mean.set_graph(list_of_test_arch_indices)
     for ep in range(num_episodes):
         obs = envs.reset()
         done = [False for _ in range(envs.num_envs)]
@@ -252,6 +252,10 @@ if __name__ == "__main__":
         policy_shape_inds_tracker = []
         policy_indices_tracker = []
 
+        if args.architecture_sampling == 'biased':
+            # sample architectures for this episode
+            list_of_archs_for_this_episode = np.random.choice(agent.actor_mean.list_of_arc_indices, args.num_episode_splits*agent.actor_mean.meta_batch_size, p = agent.actor_mean.arch_sampling_probs, replace=False)
+            agent.actor_mean.set_graph(list_of_archs_for_this_episode[split_index*args.meta_batch_size:(split_index+1)*args.meta_batch_size])
         start_time = time.time()
         for step in range(0, args.num_steps):
             # next_obs = envs.reset().to(device)
@@ -292,7 +296,10 @@ if __name__ == "__main__":
                     policy_shape_inds_tracker.append(agent.actor_mean.sampled_shape_inds)
                     policy_indices_tracker.append(agent.actor_mean.sampled_indices)
 
-                    agent.actor_mean.change_graph(repeat_sample=False)
+                    # agent.actor_mean.change_graph(repeat_sample=False)
+                    if args.architecture_sampling == 'biased' and split_index < args.num_episode_splits-1:
+                        agent.actor_mean.set_graph(list_of_archs_for_this_episode[(split_index+1)*args.meta_batch_size:(split_index+2)*args.meta_batch_size])
+
 
                 split_index += 1
                 split_step = 0
@@ -404,7 +411,7 @@ if __name__ == "__main__":
                             mb_returns2 = b_returns2[mb_inds]
                             mb_values2 = b_values2[mb_inds]
 
-                        agent.actor_mean.set_graph(policy_indices_tracker[split], policy_shape_inds_tracker[split])
+                        agent.actor_mean.set_graph(policy_indices_tracker[split])
                         agent.actor_mean.change_graph(repeat_sample = True)
 
                         _, newlogprob, entropy = agent.get_action(mb_obs, mb_actions)

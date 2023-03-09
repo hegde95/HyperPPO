@@ -195,7 +195,7 @@ class hyperActor(nn.Module):
                     debug_level=0, device=self.device).to(self.device)  
 
 
-    def set_graph(self, indices_vector, shape_ind_vec):
+    def set_graph(self, indices_vector):
         ''' Set the graph to be used by the GHN. We can do this only by passing the indices of the 
             architectures we want to use and the shape indicators for those architectures. Then we estimate the 
             weights for those architectures and set it to the current model
