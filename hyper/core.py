@@ -62,7 +62,7 @@ class hyperActor(nn.Module):
             self.log_std = nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
         elif self.std_mode == 'multi':
             self.log_std = nn.ParameterList([
-                nn.Parameter(torch.zeros(1, np.prod(self.act_dim)))
+                nn.Parameter(torch.zeros(1, np.prod(self.act_dim)), requires_grad = False)
             for index in self.list_of_arc_indices
             ])
             pass
@@ -195,22 +195,6 @@ class hyperActor(nn.Module):
                     debug_level=0, device=self.device).to(self.device)  
 
 
-    def set_graph(self, indices_vector, shape_ind_vec):
-        ''' Set the graph to be used by the GHN. We can do this only by passing the indices of the 
-            architectures we want to use and the shape indicators for those architectures. Then we estimate the 
-            weights for those architectures and set it to the current model
-        '''
-        self.sampled_indices = indices_vector
-        # self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
-        self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
-        self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]   
-        self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)
-        self.current_model = [self.all_models[i] for i in self.sampled_indices]
-        self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device)
-        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
-        if self.std_mode == 'multi':
-            self.current_std = [self.log_std[i] for i in self.sampled_indices]
-
 
     def get_params(self, net):
         ''' Get the number of parameters in a MLP network architecture
@@ -245,6 +229,30 @@ class hyperActor(nn.Module):
 
 
 
+    def set_graph(self, indices_vector, shape_ind_vec):
+        ''' Set the graph to be used by the GHN. We can do this only by passing the indices of the 
+            architectures we want to use and the shape indicators for those architectures. Then we estimate the 
+            weights for those architectures and set it to the current model
+        '''
+
+        # delete gradients of the previous log_std, this speeds up training
+        if self.std_mode == 'multi':
+            for i in self.sampled_indices:
+                self.log_std[i].requires_grad = False
+                self.log_std[i].grad = None
+        self.sampled_indices = indices_vector
+        # self.sampled_shape_inds = shape_ind_vec.view(-1)[shape_ind_vec.view(-1) != -1].unsqueeze(-1)
+        self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
+        self.list_of_sampled_shape_inds = [self.current_shape_inds_vec[k][:self.list_of_shape_inds_lenths[index]] for k,index in enumerate(self.sampled_indices)]   
+        self.sampled_shape_inds = torch.cat(self.list_of_sampled_shape_inds).view(-1,1)
+        self.current_model = [self.all_models[i] for i in self.sampled_indices]
+        self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device)
+        _, embeddings = self.ghn(self.current_model, return_embeddings=True, shape_ind = self.sampled_shape_inds)
+        if self.std_mode == 'multi':
+            for i in self.sampled_indices:
+                self.log_std[i].requires_grad = True       
+        #     self.current_std = [self.log_std[i] for i in self.sampled_indices]
+
 
     def change_graph(self, repeat_sample = False):
         ''' Estimate the weights for the current models.
@@ -260,10 +268,6 @@ class hyperActor(nn.Module):
 
             self.current_archs = torch.tensor([list(self.list_of_arcs[index]) + [0]*(4-len(self.list_of_arcs[index])) for index in self.sampled_indices]).to(self.device) 
             self.current_model = [self.all_models[i] for i in self.sampled_indices]
-            # self.current_model = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = 2 * self.act_dim) for index in self.sampled_indices]
-
-            if self.std_mode == 'multi':
-                self.current_std = [self.log_std[i] for i in self.sampled_indices]
             
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
@@ -305,7 +309,7 @@ class hyperActor(nn.Module):
             return self.log_std.expand_as(mu)
             
         elif self.std_mode == 'multi':
-            return torch.cat([current_std_.expand(batch_per_net,6) for current_std_ in self.current_std])
+            return torch.cat([self.log_std[i].expand(batch_per_net,6) for i in self.sampled_indices])
 
 
 
