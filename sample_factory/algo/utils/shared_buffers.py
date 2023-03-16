@@ -76,7 +76,7 @@ def policy_output_shapes(num_actions, num_action_distribution_parameters) -> Lis
     return policy_outputs
 
 
-def alloc_trajectory_tensors(env_info: EnvInfo, num_traj, rollout, rnn_size, device, share) -> TensorDict:
+def alloc_trajectory_tensors(cfg, env_info: EnvInfo, num_traj, rollout, rnn_size, device, share) -> TensorDict:
     obs_space = env_info.obs_space
 
     tensors = TensorDict()
@@ -93,6 +93,10 @@ def alloc_trajectory_tensors(env_info: EnvInfo, num_traj, rollout, rnn_size, dev
 
     num_actions, num_action_distribution_parameters = action_info(env_info)
     policy_outputs = policy_output_shapes(num_actions, num_action_distribution_parameters)
+    if cfg.hyper:
+        policy_outputs += [("policy_shapes_per_state_dim", [4])]
+        policy_outputs += [("policy_shape_inds", [11])]
+        policy_outputs += [("policy_indices", [])]
 
     # we need one more step to hold values for the last step
     outputs_with_extra_rollout_step = ["values"]
@@ -113,7 +117,6 @@ def alloc_trajectory_tensors(env_info: EnvInfo, num_traj, rollout, rnn_size, dev
     tensors["policy_id"].fill_(-1)  # -1 is an invalid policy index, experience from policy "-1" is always ignored
     tensors["valids"] = init_tensor([num_traj, rollout + 1], torch.bool, [], device, share)
     tensors["valids"].fill_(False)  # no valid experience by default
-
     return tensors
 
 
@@ -130,6 +133,10 @@ def alloc_policy_output_tensors(cfg, env_info: EnvInfo, rnn_size, device, share)
     num_actions, num_action_distribution_parameters = action_info(env_info)
     policy_outputs = policy_output_shapes(num_actions, num_action_distribution_parameters)
     policy_outputs += [("new_rnn_states", [rnn_size])]  # different name so we don't override current step rnn_state
+    if cfg.hyper:
+        policy_outputs += [("policy_shapes_per_state_dim", [4])]
+        policy_outputs += [("policy_shape_inds", [11])]
+        policy_outputs += [("policy_indices", [])]
 
     output_names, output_shapes = list(zip(*policy_outputs))
     output_sizes = [shape[0] if shape else 1 for shape in output_shapes]
@@ -213,6 +220,7 @@ class BufferMgr(Configurable):
             self.traj_buffer_queues[device] = get_queue(cfg.serial_mode)
 
             self.traj_tensors_torch[device] = alloc_trajectory_tensors(
+                cfg,
                 env_info,
                 num_buffers,
                 cfg.rollout,

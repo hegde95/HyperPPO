@@ -111,21 +111,21 @@ class hyperActor(nn.Module):
         # for k in range(1,5):
             # self.list_of_arcs.extend(list(product(list_of_allowable_layers, repeat = k)))      
         # TDOD: DELETE THIS LINE, THIS IS DEBUG
-        # for i in range(500):
-        #     self.list_of_arcs.extend([
-        #         [4, 4],
-        #         [16],
-        #         [16, 16, 16],
-        #         [32, 32, 32],
-        #         [64, 64, 64, 64],
-        #         [128, 128, 128, 128],
-        #         [256, 256, 256],
-        #         [256, 256, 256, 256],                
-        #     ])
         for i in range(500):
             self.list_of_arcs.extend([
-                [256, 128],                
+                [4, 4],
+                [16],
+                [16, 16, 16],
+                [32, 32, 32],
+                [64, 64, 64, 64],
+                [128, 128, 128, 128],
+                [256, 256, 256],
+                [256, 256, 256, 256],                
             ])
+        # for i in range(500):
+        #     self.list_of_arcs.extend([
+        #         [256, 256, 256, 128],                
+        #     ])
         self.list_of_arcs.sort(key = lambda x:self.get_params(x))
 
         self._initialize_shape_inds()

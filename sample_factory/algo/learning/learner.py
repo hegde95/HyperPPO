@@ -709,7 +709,18 @@ class Learner(Configurable):
                     break
 
                 force_summaries = False
-                minibatches = self._get_minibatches(batch_size, experience_size)
+                # minibatches = self._get_minibatches(batch_size, experience_size)
+                minibatches = []
+                num_envs_per_policy = self.cfg.env_agents // 32
+                num_policy_data_per_batch = num_envs_per_policy * self.cfg.rollout
+                num_policy_data_per_minibatch = num_policy_data_per_batch // self.cfg.num_batches_per_epoch
+                for k in range(self.cfg.num_batches_per_epoch):
+                    curr_slice = []
+                    for l in range(32):
+                        curr_slice.append((k*num_policy_data_per_minibatch)+np.arange(l*num_policy_data_per_batch,l*num_policy_data_per_batch + num_policy_data_per_minibatch))
+                    curr_slice = np.concatenate(curr_slice)
+                    minibatches.append(curr_slice)
+
 
             for batch_num in range(len(minibatches)):
                 with torch.no_grad(), timing.add_time("minibatch_init"):

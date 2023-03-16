@@ -329,6 +329,10 @@ class InferenceWorker(HeartbeatStoppableEventLoopObject, Configurable):
             with timing.add_time("forward"):
                 policy_outputs = actor_critic(normalized_obs, rnn_states)
                 policy_outputs["policy_version"] = torch.empty([num_samples]).fill_(self.param_client.policy_version)
+                if self.cfg.hyper:
+                    policy_outputs["policy_shapes_per_state_dim"] = actor_critic.actor_encoder.arch_per_state_dim
+                    policy_outputs["policy_shape_inds"] = actor_critic.actor_encoder.shape_ind_per_state_dim
+                    policy_outputs["policy_indices"] = actor_critic.actor_encoder.sampled_indices_per_state_dim            
 
             with timing.add_time("prepare_outputs"):
                 signals_to_send = self._prepare_policy_outputs_func(num_samples, policy_outputs, self.requests)
