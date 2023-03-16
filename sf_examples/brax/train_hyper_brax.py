@@ -131,7 +131,7 @@ def add_extra_params_func(parser) -> None:
     p = parser
     p.add_argument(
         "--env_agents",
-        default=2048,
+        default=4096,
         type=int,
         help="Num. agents in a vectorized env",
     )
@@ -161,7 +161,12 @@ def add_extra_params_func(parser) -> None:
         type=str2bool,
         help="Train a hyper policy",
     )
-
+    p.add_argument(
+        "--meta_batch_size",
+        default=32,
+        type=int,
+        help="Number of architectures to train in parallel",
+    )
 
 def override_default_params_func(env, parser):
     """Most of these parameters are the same as IsaacGymEnvs default config files."""
@@ -181,9 +186,9 @@ def override_default_params_func(env, parser):
         reward_scale=0.01,
         max_grad_norm=1.0,
         rollout=128,
-        batch_size=32768,
+        batch_size=65536,
         num_batches_per_epoch=8,
-        num_epochs=5,
+        num_epochs=2,
         ppo_clip_ratio=0.2,
         ppo_clip_value=1.0,
         value_loss_coeff=2.0,

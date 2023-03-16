@@ -596,6 +596,9 @@ class Learner(Configurable):
 
             del core_outputs
 
+        if self.cfg.hyper:
+            assert (self.actor_critic.actor_encoder.sampled_indices_per_state_dim.to('cuda') == mb.policy_indices).all(), "Data is being mixed between architectures"
+
         # these computations are not the part of the computation graph
         with torch.no_grad(), self.timing.add_time("advantages_returns"):
             if self.cfg.with_vtrace:
@@ -709,18 +712,13 @@ class Learner(Configurable):
                     break
 
                 force_summaries = False
-                # minibatches = self._get_minibatches(batch_size, experience_size)
-                minibatches = []
-                num_envs_per_policy = self.cfg.env_agents // 32
-                num_policy_data_per_batch = num_envs_per_policy * self.cfg.rollout
-                num_policy_data_per_minibatch = num_policy_data_per_batch // self.cfg.num_batches_per_epoch
-                for k in range(self.cfg.num_batches_per_epoch):
-                    curr_slice = []
-                    for l in range(32):
-                        curr_slice.append((k*num_policy_data_per_minibatch)+np.arange(l*num_policy_data_per_batch,l*num_policy_data_per_batch + num_policy_data_per_minibatch))
-                    curr_slice = np.concatenate(curr_slice)
-                    minibatches.append(curr_slice)
-
+                if self.cfg.hyper:
+                    num_envs_per_policy = self.cfg.env_agents // self.cfg.meta_batch_size
+                    num_policy_data_per_batch = num_envs_per_policy * self.cfg.rollout
+                    num_policy_data_per_minibatch = num_policy_data_per_batch // self.cfg.num_batches_per_epoch
+                    minibatches = [np.concatenate([(k*num_policy_data_per_minibatch)+np.arange(l*num_policy_data_per_batch,l*num_policy_data_per_batch + num_policy_data_per_minibatch) for l in range(self.cfg.meta_batch_size)]) for k in range(self.cfg.num_batches_per_epoch)]
+                else:
+                    minibatches = self._get_minibatches(batch_size, experience_size)
 
             for batch_num in range(len(minibatches)):
                 with torch.no_grad(), timing.add_time("minibatch_init"):
@@ -847,6 +845,9 @@ class Learner(Configurable):
                 break
 
             prev_epoch_actor_loss = new_epoch_actor_loss
+
+        if self.cfg.hyper:
+            self.actor_critic.actor_encoder.change_graph(repeat_sample = False)
 
         return stats_and_summaries
 

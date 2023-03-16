@@ -18,7 +18,7 @@ from sample_factory.model.action_parameterization import (
 )
 from sample_factory.model.model_utils import model_device
 from sample_factory.utils.normalize import ObservationNormalizer
-from sample_factory.utils.typing import ActionSpace, Config, ObsSpace
+from sample_factory.utils.typing import ActionSpace, Config, ObsSpace, spaces
 
 from hyper.core import hyperActor
 
@@ -297,8 +297,8 @@ class HyperActorCritic(ActorCritic):
                                          meta_batch_size = 32, device=torch.device("cuda"), multi_gpu=False)
         self.actor_encoder.change_graph()
         self.actor_core = model_factory.make_model_core_func(cfg, action_space.shape[0])
-
-        self.critic_encoder = model_factory.make_model_encoder_func(cfg, obs_space)
+        critic_input_space = spaces.Dict({'obs_arch': spaces.Box(low=0, high=1, shape=(4 + obs_space['obs'].shape[0],))})
+        self.critic_encoder = model_factory.make_model_encoder_func(cfg, critic_input_space)
         self.critic_core = model_factory.make_model_core_func(cfg, self.critic_encoder.get_out_size())
 
         self.encoders = [self.actor_encoder, self.critic_encoder]
@@ -345,7 +345,8 @@ class HyperActorCritic(ActorCritic):
         # for enc in self.encoders:
         #     head_outputs.append(enc(normalized_obs_dict))
         head_outputs.append(self.actor_encoder(normalized_obs_dict['obs'])[0])
-        head_outputs.append(self.critic_encoder(normalized_obs_dict))
+        critic_input = {'obs_arch': torch.cat((normalized_obs_dict['obs'], self.actor_encoder.arch_per_state_dim), dim=1)}
+        head_outputs.append(self.critic_encoder(critic_input))
 
         return torch.cat(head_outputs, dim=1)
 
