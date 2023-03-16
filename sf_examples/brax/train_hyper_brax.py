@@ -212,6 +212,9 @@ def override_default_params_func(env, parser):
         async_rl=False,
         experiment_summaries_interval=3,  # experiments are short so we should save summaries often
         # use_env_info_cache=True,  # speeds up startup
+
+        wandb_project = "hyperppo",
+        
     )
 
     # override default config parameters for specific envs
