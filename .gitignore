@@ -6,3 +6,5 @@ __pycache__
 wandb
 .vscode
 tmp
+
+train_dir/
