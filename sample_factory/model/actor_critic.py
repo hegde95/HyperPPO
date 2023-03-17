@@ -7,7 +7,7 @@ from torch import Tensor, nn
 
 import numpy as np
 
-from sample_factory.algo.utils.action_distributions import is_continuous_action_space, sample_actions_log_probs
+from sample_factory.algo.utils.action_distributions import is_continuous_action_space, sample_actions_log_probs, argmax_actions
 from sample_factory.algo.utils.running_mean_std import RunningMeanStdInPlace, running_mean_std_summaries
 from sample_factory.algo.utils.tensor_dict import TensorDict
 from sample_factory.cfg.configurable import Configurable
@@ -118,6 +118,9 @@ class ActorCritic(nn.Module, Configurable):
             actions, result["log_prob_actions"] = sample_actions_log_probs(self.last_action_distribution)
             assert actions.dim() == 2  # TODO: remove this once we test everything
             result["actions"] = actions.squeeze(dim=1)
+        else:
+            result["actions"] = argmax_actions(self.last_action_distribution).squeeze(dim=1)
+            result["log_prob_actions"] = None
 
     def forward_head(self, normalized_obs_dict: Dict[str, Tensor]) -> Tensor:
         raise NotImplementedError()
@@ -374,10 +377,10 @@ class HyperActorCritic(ActorCritic):
         self._maybe_sample_actions(sample_actions, result)
         return result
 
-    def forward(self, normalized_obs_dict, rnn_states, values_only=False) -> TensorDict:
+    def forward(self, normalized_obs_dict, rnn_states, values_only=False, sample_actions = True) -> TensorDict:
         x = self.forward_head(normalized_obs_dict)
         x, new_rnn_states = self.forward_core(x, rnn_states)
-        result = self.forward_tail(x, values_only, sample_actions=True)
+        result = self.forward_tail(x, values_only, sample_actions=sample_actions)
         result["new_rnn_states"] = new_rnn_states
         return result
     
