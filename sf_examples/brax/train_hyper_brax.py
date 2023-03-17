@@ -262,6 +262,9 @@ def main():
     """Script entry point."""
     register_brax_custom_components()
     cfg = parse_brax_cfg()
+    if cfg.seed is None:
+        cfg.seed = 000
+    cfg.experiment += "_seed_"+str(cfg.seed)
     status = run_rl(cfg)
     return status
 
