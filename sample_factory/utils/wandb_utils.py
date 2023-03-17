@@ -33,6 +33,7 @@ def init_wandb(cfg):
     # this can fail occasionally, so we try a couple more times
     @retry(3, exceptions=(Exception,))
     def init_wandb_func():
+        wandb_tags = [str(tag) for tag in cfg.wandb_tags[0].split(" ")]
         wandb.init(
             project=cfg.wandb_project,
             entity=cfg.wandb_user,
@@ -41,7 +42,7 @@ def init_wandb(cfg):
             name=wandb_unique_id,
             group=wandb_group,
             job_type=cfg.wandb_job_type,
-            tags=cfg.wandb_tags,
+            tags=wandb_tags,
             resume="allow",
             settings=wandb.Settings(start_method="fork"),
         )

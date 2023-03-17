@@ -214,6 +214,7 @@ def override_default_params_func(env, parser):
         # use_env_info_cache=True,  # speeds up startup
 
         wandb_project = "hyperppo",
+        save_milestones_sec = 180,
 
     )
 
