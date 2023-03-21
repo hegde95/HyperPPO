@@ -1,7 +1,10 @@
 import sys
+import os
 
 from sample_factory.enjoy import *
 from sf_examples.brax.train_hyper_brax import parse_brax_cfg, register_brax_custom_components
+from sample_factory.utils.wandb_utils import init_wandb
+from tensorboardX import SummaryWriter
 
 def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     verbose = True
@@ -41,86 +44,99 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     device = torch.device("cpu" if cfg.device == "cpu" else "cuda")
     actor_critic.model_to_device(device)
 
-    policy_id = cfg.policy_index
-    name_prefix = dict(latest="checkpoint", best="best")[cfg.load_checkpoint_kind]
-    checkpoints = Learner.get_checkpoints(Learner.checkpoint_dir(cfg, policy_id), f"{name_prefix}_*")
-    checkpoint_dict = Learner.load_checkpoint(checkpoints, device)
-    actor_critic.load_state_dict(checkpoint_dict["model"])
+    # policy_id = cfg.policy_index
+    # name_prefix = dict(latest="checkpoint", best="best")[cfg.load_checkpoint_kind]
+    # checkpoints = Learner.get_checkpoints(Learner.checkpoint_dir(cfg, policy_id), f"{name_prefix}_*")
+    milestone_dir = os.path.join(cfg.train_dir, cfg.experiment, "checkpoint_p0", "milestones")
+    milestones = Learner.get_checkpoints(milestone_dir, "checkpoint_*")
+    summary_dir = os.path.join(cfg.train_dir, cfg.experiment, ".summary", "0")
 
-    list_of_test_archs = [
-        [4, 4],
-        [16],
-        [16, 16, 16],
-        [32, 32, 32],
-        [64, 64, 64, 64],
-        [128, 128, 128, 128],
-        [256, 256, 256],
-        [256, 256, 256, 256],
-    ]
-    list_of_test_arch_indices = [[i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
-    list_of_test_shape_inds = torch.stack([actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
-    actor_critic.actor_encoder.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
+    init_wandb(cfg)
+    writer = SummaryWriter(summary_dir)
+    
+    for checkpoint in milestones:
+        print(f"Evaluating:{checkpoint}")
 
+        checkpoint_dict = Learner.load_checkpoint([checkpoint], device)
+        actor_critic.load_state_dict(checkpoint_dict["model"])
 
-    episode_rewards = np.zeros((env.num_agents))
-    num_frames = 0
-
-    def max_frames_reached(frames):
-        return cfg.max_num_frames is not None and frames > cfg.max_num_frames
-
-    reward_list = []
-
-    obs, infos = env.reset()
-    rnn_states = torch.zeros([env.num_agents, get_rnn_size(cfg)], dtype=torch.float32, device=device)
-    episode_reward = None
-    finished_episode = [False for _ in range(env.num_agents)]
-
-    video_frames = []
-    num_episodes = 0
-
-    with torch.no_grad():
-        while not all(finished_episode):
-            normalized_obs = prepare_and_normalize_obs(actor_critic, obs)
-
-            if not cfg.no_render:
-                visualize_policy_inputs(normalized_obs)
-            policy_outputs = actor_critic(normalized_obs, rnn_states, sample_actions=True)
-
-            # sample actions from the distribution by default
-            actions = policy_outputs["actions"]
-
-            # actions shape should be [num_agents, num_actions] even if it's [1, 1]
-            if actions.ndim == 1:
-                actions = unsqueeze_tensor(actions, dim=-1)
-            actions = preprocess_actions(env_info, actions)
+        list_of_test_archs = [
+            [4, 4],
+            [16],
+            [16, 16, 16],
+            [32, 32, 32],
+            [64, 64, 64, 64],
+            [128, 128, 128, 128],
+            [256, 256, 256],
+            [256, 256, 256, 256],
+        ]
+        list_of_test_arch_indices = [[i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
+        list_of_test_shape_inds = torch.stack([actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
+        actor_critic.actor_encoder.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
 
 
+        episode_rewards = np.zeros((env.num_agents))
+        num_frames = 0
 
-            obs, rew, terminated, truncated, infos = env.step(actions)
-            dones = make_dones(terminated, truncated)
-            infos = [{} for _ in range(env_info.num_agents)] if infos is None else infos
+        def max_frames_reached(frames):
+            return cfg.max_num_frames is not None and frames > cfg.max_num_frames
 
-            if episode_reward is None:
-                episode_reward = rew.float().clone()
-            else:
-                episode_reward += rew.float()
+        reward_list = []
 
-            dones = dones.cpu().numpy()
-            for agent_i, done_flag in enumerate(dones):
-                if done_flag:
-                    finished_episode[agent_i] = True
-                    rew = episode_reward[agent_i].item()
-                    episode_rewards[agent_i] = rew
+        obs, infos = env.reset()
+        rnn_states = torch.zeros([env.num_agents, get_rnn_size(cfg)], dtype=torch.float32, device=device)
+        episode_reward = None
+        finished_episode = [False for _ in range(env.num_agents)]
+
+        video_frames = []
+        num_episodes = 0
+
+        with torch.no_grad():
+            while not all(finished_episode):
+                normalized_obs = prepare_and_normalize_obs(actor_critic, obs)
+
+                if not cfg.no_render:
+                    visualize_policy_inputs(normalized_obs)
+                policy_outputs = actor_critic(normalized_obs, rnn_states, sample_actions=True)
+
+                # sample actions from the distribution by default
+                actions = policy_outputs["actions"]
+
+                # actions shape should be [num_agents, num_actions] even if it's [1, 1]
+                if actions.ndim == 1:
+                    actions = unsqueeze_tensor(actions, dim=-1)
+                actions = preprocess_actions(env_info, actions)
 
 
 
-                    episode_reward[agent_i] = 0
+                obs, rew, terminated, truncated, infos = env.step(actions)
+                dones = make_dones(terminated, truncated)
+                infos = [{} for _ in range(env_info.num_agents)] if infos is None else infos
 
-                    # reward_list.append(true_objective)
+                if episode_reward is None:
+                    episode_reward = rew.float().clone()
+                else:
+                    episode_reward += rew.float()
+
+                dones = dones.cpu().numpy()
+                for agent_i, done_flag in enumerate(dones):
+                    if done_flag:
+                        finished_episode[agent_i] = True
+                        rew = episode_reward[agent_i].item()
+                        episode_rewards[agent_i] = rew
 
 
-        if all(finished_episode):
-            average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
+
+                        episode_reward[agent_i] = 0
+
+                        # reward_list.append(true_objective)
+
+
+            if all(finished_episode):
+                average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
+                for i in range(len(list_of_test_arch_indices)):
+                    print(f"test reward_{i}:", average_reward_per_arch[i])
+                    writer.add_scalar(f"test_chart/{str(list_of_test_archs[i])}", average_reward_per_arch[i], checkpoint_dict['env_steps'])              
 
 
 
@@ -128,9 +144,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
 
 
-    return ExperimentStatus.SUCCESS, sum([sum(episode_rewards[i]) for i in range(env.num_agents)]) / sum(
-        [len(episode_rewards[i]) for i in range(env.num_agents)]
-    )
+    return ExperimentStatus.SUCCESS
 
 
 
