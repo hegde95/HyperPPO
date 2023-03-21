@@ -231,7 +231,7 @@ env_configs = dict(
         save_every_sec=15,
     ),
     humanoid=dict(
-        encoder_mlp_layers=[512, 256, 128, 6],
+        encoder_mlp_layers=[512, 256, 128, 17],
     ),
     halfcheetah=dict(
         encoder_mlp_layers=[256, 128, 64, 6],

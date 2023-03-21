@@ -314,7 +314,7 @@ class HyperActorCritic(ActorCritic):
         self.decoders = [self.actor_decoder, self.critic_decoder]
 
         self.critic_linear = nn.Linear(self.critic_decoder.get_out_size(), 1)
-        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.critic_decoder.get_out_size(), self.action_space)
+        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space)
 
         self.apply(self.initialize_weights)
 
