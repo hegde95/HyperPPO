@@ -60,19 +60,20 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
         checkpoint_dict = Learner.load_checkpoint([checkpoint], device)
         actor_critic.load_state_dict(checkpoint_dict["model"])
 
-        list_of_test_archs = [
-            [4, 4],
-            [16],
-            [16, 16, 16],
-            [32, 32, 32],
-            [64, 64, 64, 64],
-            [128, 128, 128, 128],
-            [256, 256, 256],
-            [256, 256, 256, 256],
-        ]
-        list_of_test_arch_indices = [[i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
-        list_of_test_shape_inds = torch.stack([actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
-        actor_critic.actor_encoder.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
+        if cfg.hyper:
+            list_of_test_archs = [
+                [4, 4],
+                [16],
+                [16, 16, 16],
+                [32, 32, 32],
+                [64, 64, 64, 64],
+                [128, 128, 128, 128],
+                [256, 256, 256],
+                [256, 256, 256, 256],
+            ]
+            list_of_test_arch_indices = [[i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
+            list_of_test_shape_inds = torch.stack([actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
+            actor_critic.actor_encoder.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
 
 
         episode_rewards = np.zeros((env.num_agents))
@@ -97,7 +98,11 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
                 if not cfg.no_render:
                     visualize_policy_inputs(normalized_obs)
-                policy_outputs = actor_critic(normalized_obs, rnn_states, sample_actions=True)
+                
+                if cfg.hyper:
+                    policy_outputs = actor_critic(normalized_obs, rnn_states, sample_actions=True)
+                else:
+                    policy_outputs = actor_critic(normalized_obs, rnn_states)
 
                 # sample actions from the distribution by default
                 actions = policy_outputs["actions"]
@@ -133,11 +138,14 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
 
             if all(finished_episode):
-                average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
-                for i in range(len(list_of_test_arch_indices)):
-                    print(f"test reward_{i}:", average_reward_per_arch[i])
-                    writer.add_scalar(f"test_chart/{str(list_of_test_archs[i])}", average_reward_per_arch[i], checkpoint_dict['env_steps'])              
-
+                if cfg.hyper:
+                    average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
+                    for i in range(len(list_of_test_arch_indices)):
+                        print(f"test reward_{i}:", average_reward_per_arch[i])
+                        writer.add_scalar(f"test_chart/{str(list_of_test_archs[i])}", average_reward_per_arch[i], checkpoint_dict['env_steps'])              
+                else:
+                    print(f"test reward:", episode_rewards.mean())
+                    writer.add_scalar(f"test_chart/baseline_{cfg.encoder_mlp_layers}", episode_rewards.mean(), checkpoint_dict['env_steps'])
 
 
     env.close()

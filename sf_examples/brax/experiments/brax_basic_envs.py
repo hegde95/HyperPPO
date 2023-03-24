@@ -4,16 +4,14 @@ from sample_factory.utils.algo_version import ALGO_VERSION
 
 _params = ParamGrid(
     [
-        ("seed", seeds(5)),
-        ("env", ["ant", "humanoid", "halfcheetah", "walker2d"]),
-        ("use_rnn", [False, True]),  # train recurrent and non-recurrent models
-        ("num_epochs", [5]),
+        ("seed", seeds(4)),
+        ("env", ["humanoid"]), #["ant", "humanoid", "halfcheetah", "walker2d"]
     ]
 )
 
 vstr = f"v{ALGO_VERSION:03d}_brax_basic_benchmark"
 
-cli = "python -m sf_examples.brax.train_brax --actor_worker_gpus 0 --wandb_project=sample_factory --with_wandb=True"
+cli = "python -m sf_examples.brax.train_brax --with_wandb=True --wandb_tag hmn_0_vanilla --wandb_project hyperppo"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)
