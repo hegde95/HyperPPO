@@ -593,6 +593,8 @@ class Learner(Configurable):
             ratio = torch.clamp(ratio, 0.05, 20.0)
 
             values = result["values"].squeeze()
+            if self.cfg.hyper and self.cfg.dual_critic:
+                values2 = result["values2"].squeeze()
 
             del core_outputs
 
@@ -644,19 +646,32 @@ class Learner(Configurable):
                 # using regular GAE
                 adv = mb.advantages
                 targets = mb.returns
+                if self.cfg.hyper and self.cfg.dual_critic:
+                    adv2 = mb.advantages2
+                    targets2 = mb.returns2
 
             adv_std, adv_mean = torch.std_mean(masked_select(adv, valids, num_invalids))
             adv = (adv - adv_mean) / torch.clamp_min(adv_std, 1e-7)  # normalize advantage
+            if self.cfg.hyper and self.cfg.dual_critic:
+                adv2_std, adv2_mean = torch.std_mean(masked_select(adv2, valids, num_invalids))
+                adv2 = (adv2 - adv2_mean) / torch.clamp_min(adv2_std, 1e-7)
 
         with self.timing.add_time("losses"):
             # noinspection PyTypeChecker
             policy_loss = self._policy_loss(ratio, adv, clip_ratio_low, clip_ratio_high, valids, num_invalids)
+            if self.cfg.hyper and self.cfg.dual_critic:
+                policy_loss2 = self._policy_loss(ratio, adv2, clip_ratio_low, clip_ratio_high, valids, num_invalids)
+                policy_loss = (policy_loss + policy_loss2) / 2
             exploration_loss = self.exploration_loss_func(action_distribution, valids, num_invalids)
             kl_old, kl_loss = self.kl_loss_func(
                 self.actor_critic.action_space, mb.action_logits, action_distribution, valids, num_invalids
             )
             old_values = mb["values"]
             value_loss = self._value_loss(values, old_values, targets, clip_value, valids, num_invalids)
+            if self.cfg.hyper and self.cfg.dual_critic:
+                old_values2 = mb["values2"]
+                value_loss2 = self._value_loss(values2, old_values2, targets2, clip_value, valids, num_invalids)
+                value_loss = (value_loss + value_loss2) / 2
 
         loss_summaries = dict(
             ratio=ratio,
@@ -667,6 +682,13 @@ class Learner(Configurable):
             adv_std=adv_std,
             adv_mean=adv_mean,
         )
+        if self.cfg.hyper and self.cfg.dual_critic:
+            loss_summaries.update(dict(
+                values2=result["values2"],
+                adv2=adv2,
+                adv2_std=adv2_std,
+                adv2_mean=adv2_mean,
+            ))
 
         return action_distribution, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, loss_summaries
 
@@ -971,8 +993,11 @@ class Learner(Configurable):
 
             # calculate estimated value for the next step (T+1)
             normalized_last_obs = buff["normalized_obs"][:, -1]
-            next_values = self.actor_critic(normalized_last_obs, buff["rnn_states"][:, -1], values_only=True)["values"]
+            next_result = self.actor_critic(normalized_last_obs, buff["rnn_states"][:, -1], values_only=True)
+            next_values = next_result["values"]
             buff["values"][:, -1] = next_values
+            if self.cfg.hyper and self.cfg.dual_critic:
+                buff["values2"][:, -1] = next_result["values2"]
 
             if self.cfg.normalize_returns:
                 # Since our value targets are normalized, the values will also have normalized statistics.
@@ -981,9 +1006,14 @@ class Learner(Configurable):
                 # https://github.com/Denys88/rl_games/blob/7b5f9500ee65ae0832a7d8613b019c333ecd932c/rl_games/algos_torch/models.py#L51
                 denormalized_values = buff["values"].clone()  # need to clone since normalizer is in-place
                 self.actor_critic.returns_normalizer(denormalized_values, denormalize=True)
+                if self.cfg.hyper and self.cfg.dual_critic:
+                    denormalized_values2 = buff["values2"].clone()
+                    self.actor_critic.returns_normalizer(denormalized_values2, denormalize=True)
             else:
                 # values are not normalized in this case, so we can use them as is
                 denormalized_values = buff["values"]
+                if self.cfg.hyper and self.cfg.dual_critic:
+                    denormalized_values2 = buff["values2"]
 
             if self.cfg.value_bootstrap:
                 # Value bootstrapping is a technique that reduces the surprise for the critic in case
@@ -1010,9 +1040,23 @@ class Learner(Configurable):
                 # here returns are not normalized yet, so we should use denormalized values
                 buff["returns"] = buff["advantages"] + buff["valids"][:, :-1] * denormalized_values[:, :-1]
 
+                if self.cfg.hyper and self.cfg.dual_critic:
+                    buff["advantages2"] = gae_advantages(
+                        buff["rewards"],
+                        buff["dones"],
+                        denormalized_values2,
+                        buff["valids"],
+                        self.cfg.gamma,
+                        self.cfg.gae_lambda,
+                    )
+                    buff["returns2"] = buff["advantages2"] + buff["valids"][:, :-1] * denormalized_values2[:, :-1]
+
             # remove next step obs, rnn_states, and values from the batch, we don't need them anymore
             for key in ["normalized_obs", "rnn_states", "values", "valids"]:
                 buff[key] = buff[key][:, :-1]
+            
+            if self.cfg.hyper and self.cfg.dual_critic:
+                buff["values2"] = buff["values2"][:, :-1]
 
             dataset_size = buff["actions"].shape[0] * buff["actions"].shape[1]
             for d, k, v in iterate_recursively(buff):
@@ -1025,6 +1069,8 @@ class Learner(Configurable):
             # return normalization parameters are only used on the learner, no need to lock the mutex
             if self.cfg.normalize_returns:
                 self.actor_critic.returns_normalizer(buff["returns"])  # in-place
+                if self.cfg.hyper and self.cfg.dual_critic:
+                    self.actor_critic.returns_normalizer(buff["returns2"])
 
             num_invalids = dataset_size - buff["valids"].sum().item()
             if num_invalids > 0:

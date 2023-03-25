@@ -167,6 +167,12 @@ def add_extra_params_func(parser) -> None:
         type=int,
         help="Number of architectures to train in parallel",
     )
+    p.add_argument(
+        "--dual_critic",
+        default=True,
+        type=str2bool,
+        help="Add a second critic to the policy to have cross architecture regularization",
+    )
 
 def override_default_params_func(env, parser):
     """Most of these parameters are the same as IsaacGymEnvs default config files."""

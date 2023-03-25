@@ -303,9 +303,16 @@ class HyperActorCritic(ActorCritic):
         critic_input_space = spaces.Dict({'obs_arch': spaces.Box(low=0, high=1, shape=(4 + obs_space['obs'].shape[0],))})
         self.critic_encoder = model_factory.make_model_encoder_func(cfg, critic_input_space)
         self.critic_core = model_factory.make_model_core_func(cfg, self.critic_encoder.get_out_size())
+        if cfg.dual_critic:
+            self.critic2_encoder = model_factory.make_model_encoder_func(cfg, obs_space)
+            self.critic2_core = model_factory.make_model_core_func(cfg, self.critic2_encoder.get_out_size())
+
 
         self.encoders = [self.actor_encoder, self.critic_encoder]
         self.cores = [self.actor_core, self.critic_core]
+        if cfg.dual_critic:
+            self.encoders.append(self.critic2_encoder)
+            self.cores.append(self.critic2_core)
 
         self.core_func = self._core_rnn if self.cfg.use_rnn else self._core_empty
 
@@ -313,7 +320,14 @@ class HyperActorCritic(ActorCritic):
         self.critic_decoder = model_factory.make_model_decoder_func(cfg, self.critic_core.get_out_size())
         self.decoders = [self.actor_decoder, self.critic_decoder]
 
+        if cfg.dual_critic:
+            self.critic2_decoder = model_factory.make_model_decoder_func(cfg, self.critic2_core.get_out_size())
+            self.decoders.append(self.critic2_decoder)
+            
         self.critic_linear = nn.Linear(self.critic_decoder.get_out_size(), 1)
+        if cfg.dual_critic:
+            self.critic2_linear = nn.Linear(self.critic2_decoder.get_out_size(), 1)
+
         self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space)
 
         self.apply(self.initialize_weights)
@@ -350,6 +364,8 @@ class HyperActorCritic(ActorCritic):
         head_outputs.append(self.actor_encoder(normalized_obs_dict['obs'])[0])
         critic_input = {'obs_arch': torch.cat((normalized_obs_dict['obs'], self.actor_encoder.arch_per_state_dim), dim=1)}
         head_outputs.append(self.critic_encoder(critic_input))
+        if self.cfg.dual_critic:
+            head_outputs.append(self.critic2_encoder(normalized_obs_dict))
 
         return torch.cat(head_outputs, dim=1)
 
@@ -362,8 +378,14 @@ class HyperActorCritic(ActorCritic):
         # second core output corresponds to the critic
         critic_decoder_output = self.critic_decoder(core_outputs[1])
         values = self.critic_linear(critic_decoder_output).squeeze()
-
         result = TensorDict(values=values)
+
+        if self.cfg.dual_critic:
+            critic2_decoder_output = self.critic2_decoder(core_outputs[2])
+            values2 = self.critic2_linear(critic2_decoder_output).squeeze()
+            result["values2"] = values2
+
+
         if values_only:
             # this can be further optimized - we don't need to calculate actor head/core just to get values
             return result

@@ -97,9 +97,13 @@ def alloc_trajectory_tensors(cfg, env_info: EnvInfo, num_traj, rollout, rnn_size
         policy_outputs += [("policy_shapes_per_state_dim", [4])]
         policy_outputs += [("policy_shape_inds", [11])]
         policy_outputs += [("policy_indices", [])]
+        if cfg.dual_critic:
+            policy_outputs += [("values2", [])]
 
     # we need one more step to hold values for the last step
     outputs_with_extra_rollout_step = ["values"]
+    if cfg.dual_critic:
+        outputs_with_extra_rollout_step += ["values2"]
 
     for name, shape in policy_outputs:
         assert name not in tensors
@@ -137,6 +141,8 @@ def alloc_policy_output_tensors(cfg, env_info: EnvInfo, rnn_size, device, share)
         policy_outputs += [("policy_shapes_per_state_dim", [4])]
         policy_outputs += [("policy_shape_inds", [11])]
         policy_outputs += [("policy_indices", [])]
+        if cfg.dual_critic:
+            policy_outputs += [("values2", [])]
 
     output_names, output_shapes = list(zip(*policy_outputs))
     output_sizes = [shape[0] if shape else 1 for shape in output_shapes]
