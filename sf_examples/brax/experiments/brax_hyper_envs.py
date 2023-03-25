@@ -9,9 +9,9 @@ _params = ParamGrid(
     ]
 )
 
-vstr = f"brax_hyper_humanoid_benchmark"
+vstr = f"hyper_humanoid_dual_critic"
 
-cli = "python -m sf_examples.brax.train_hyper_brax --with_wandb=True --wandb_tag hmn_0_vanilla --hyper False"
+cli = "python -m sf_examples.brax.train_hyper_brax --with_wandb=True --wandb_tag hmn_dc --hyper True"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)
