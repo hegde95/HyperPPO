@@ -322,7 +322,7 @@ class hyperActor(nn.Module):
             return self.log_std.expand_as(mu)
             
         elif self.std_mode == 'multi':
-            return torch.cat([self.log_std[i].expand(batch_per_net,6) for i in self.sampled_indices])
+            return torch.cat([self.log_std[i].expand(batch_per_net,self.act_dim) for i in self.sampled_indices])
 
 
 

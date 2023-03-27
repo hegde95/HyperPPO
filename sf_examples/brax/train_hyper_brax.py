@@ -18,6 +18,8 @@ from sample_factory.train import run_rl
 from sample_factory.utils.typing import Config, Env
 from sample_factory.utils.utils import log, str2bool
 
+from sf_examples.brax.enjoy_hyper_brax import enjoy
+
 BRAX_EVALUATION = False
 torch.ones(1, device="cuda")  # init torch cuda before jax
 
@@ -282,9 +284,18 @@ def main():
     cfg = parse_brax_cfg()
     if cfg.seed is None:
         cfg.seed = 000
-    cfg.experiment += "_seed_"+str(cfg.seed)
-    status = run_rl(cfg)
-    return status
+    train_status = run_rl(cfg)
+
+    test_cfg = parse_brax_cfg(evaluation=True)
+    if test_cfg.with_wandb:
+        import wandb
+        wandb.finish()
+    test_status = enjoy(test_cfg, following_train=True)
+    if test_cfg.with_wandb:
+        import wandb
+        wandb.finish()
+
+    return train_status
 
 
 if __name__ == "__main__":

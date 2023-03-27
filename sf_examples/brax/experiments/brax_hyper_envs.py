@@ -4,14 +4,18 @@ from sample_factory.utils.algo_version import ALGO_VERSION
 
 _params = ParamGrid(
     [
-        ("seed", seeds(4)),
+        ("seed", seeds(8)),
         ("env", ["humanoid"]),  #["ant", "humanoid", "halfcheetah", "walker2d"]
+        ("dual_critic", [True, False]),
+        ("multi_stddev", [True, False]),
+        ("arch_sampling_mode", ["biased", "uniform"]),
+
     ]
 )
 
-vstr = f"hyper_humanoid_dual_critic"
+vstr = f"hyper_humanoid"
 
-cli = "python -m sf_examples.brax.train_hyper_brax --with_wandb=True --wandb_tag hmn_dc --hyper True"
+cli = "python -m sf_examples.brax.train_hyper_brax --with_wandb=True --wandb_tag humanoid_bench --hyper True"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)

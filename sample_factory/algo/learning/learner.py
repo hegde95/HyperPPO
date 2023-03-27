@@ -668,7 +668,7 @@ class Learner(Configurable):
             policy_loss = self._policy_loss(ratio, adv, clip_ratio_low, clip_ratio_high, valids, num_invalids)
             if self.cfg.hyper and self.cfg.dual_critic:
                 policy_loss2 = self._policy_loss(ratio, adv2, clip_ratio_low, clip_ratio_high, valids, num_invalids)
-                policy_loss = (policy_loss + policy_loss2) / 2
+                policy_loss = (policy_loss + policy_loss2)
             exploration_loss = self.exploration_loss_func(action_distribution, valids, num_invalids)
             kl_old, kl_loss = self.kl_loss_func(
                 self.actor_critic.action_space, mb.action_logits, action_distribution, valids, num_invalids
@@ -678,7 +678,7 @@ class Learner(Configurable):
             if self.cfg.hyper and self.cfg.dual_critic:
                 old_values2 = mb["values2"]
                 value_loss2 = self._value_loss(values2, old_values2, targets2, clip_value, valids, num_invalids)
-                value_loss = (value_loss + value_loss2) / 2
+                value_loss = (value_loss + value_loss2)
 
         loss_summaries = dict(
             ratio=ratio,

@@ -6,11 +6,11 @@ from sf_examples.brax.train_hyper_brax import parse_brax_cfg, register_brax_cust
 from sample_factory.utils.wandb_utils import init_wandb
 from tensorboardX import SummaryWriter
 
-def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
+def enjoy(cfg: Config, following_train: bool = False) -> Tuple[StatusCode, float]:
     verbose = True
 
-
-    cfg = load_from_checkpoint(cfg)
+    if not following_train:
+        cfg = load_from_checkpoint(cfg)
     cfg.env_agents = 8*8
 
     eval_env_frameskip: int = cfg.env_frameskip if cfg.eval_env_frameskip is None else cfg.eval_env_frameskip
@@ -143,10 +143,11 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
                     for i in range(len(list_of_test_arch_indices)):
                         print(f"test reward_{i}:", average_reward_per_arch[i])
                         writer.add_scalar(f"test_chart/{str(list_of_test_archs[i])}", average_reward_per_arch[i], checkpoint_dict['env_steps'])              
+                    writer.add_scalar(f"test_chart/all_average", average_reward_per_arch.mean(), checkpoint_dict['env_steps'])
                 else:
                     print(f"test reward:", episode_rewards.mean())
                     writer.add_scalar(f"test_chart/baseline_{cfg.encoder_mlp_layers}", episode_rewards.mean(), checkpoint_dict['env_steps'])
-
+                    writer.add_scalar(f"test_chart/all_average", episode_rewards.mean(), checkpoint_dict['env_steps'])
 
     env.close()
 

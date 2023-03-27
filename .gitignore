@@ -3,9 +3,9 @@ checkpoints
 
 # all pycache files
 __pycache__
-wandb
+wandb*
 .vscode
 tmp
 
-train_dir/
+train_dir*
 dummy
