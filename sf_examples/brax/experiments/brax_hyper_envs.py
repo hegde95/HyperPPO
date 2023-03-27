@@ -8,14 +8,14 @@ _params = ParamGrid(
         ("env", ["humanoid"]),  #["ant", "humanoid", "halfcheetah", "walker2d"]
         ("dual_critic", [True, False]),
         ("multi_stddev", [True, False]),
-        ("arch_sampling_mode", ["biased", "uniform"]),
+        ("arch_sampling_mode", ["uniform"]),
 
     ]
 )
 
 vstr = f"hyper_humanoid"
 
-cli = "python -m sf_examples.brax.train_hyper_brax --with_wandb=True --wandb_tag humanoid_bench --hyper True"
+cli = "python -m sf_examples.brax.train_hyper_brax --with_wandb=True --wandb_tag humanoid_bench --hyper True --wandb_user khegde"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)

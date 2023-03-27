@@ -3,6 +3,7 @@ Brax env integration.
 """
 import sys
 from typing import Dict, List, Optional, Tuple, Union
+import time
 
 import gymnasium as gym
 import numpy as np
@@ -234,7 +235,7 @@ def override_default_params_func(env, parser):
         # use_env_info_cache=True,  # speeds up startup
 
         wandb_project = "hyperppo",
-        save_milestones_sec = 180,
+        save_milestones_sec = 720,
 
     )
 
@@ -294,6 +295,8 @@ def main():
     if test_cfg.with_wandb:
         import wandb
         wandb.finish()
+        # wait a minute for wandb to finish
+        time.sleep(60)
 
     return train_status
 
