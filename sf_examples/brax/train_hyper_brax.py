@@ -173,6 +173,18 @@ def add_extra_params_func(parser) -> None:
         type=str2bool,
         help="Add a second critic to the policy to have cross architecture regularization",
     )
+    p.add_argument(
+        "--multi_stddev",
+        default=True,
+        type=str2bool,
+        help="If true we use a different stddev for each architecture",
+    )
+    p.add_argument(
+        "--arch_sampling_mode",
+        default="biased",
+        type=str,
+        help="the architecture sampling method, has to be in [biased, uniform, sequential]",
+    )
 
 def override_default_params_func(env, parser):
     """Most of these parameters are the same as IsaacGymEnvs default config files."""
@@ -184,7 +196,7 @@ def override_default_params_func(env, parser):
         num_envs_per_worker=1,
         worker_num_splits=1,
         actor_worker_gpus=[0],  # obviously need a GPU
-        train_for_env_steps=10000000000,
+        train_for_env_steps=2_000_000_000,
         use_rnn=False,
         adaptive_stddev=False,
         policy_initialization="torch_default",
@@ -233,17 +245,17 @@ def override_default_params_func(env, parser):
 # add more envs here analogously (env names should match config file names in IGE)
 env_configs = dict(
     ant=dict(
-        encoder_mlp_layers=[256, 128, 64, 6],
+        encoder_mlp_layers=[256, 256, 256, 6],
         save_every_sec=15,
     ),
     humanoid=dict(
-        encoder_mlp_layers=[512, 256, 128, 17],
+        encoder_mlp_layers=[256, 256, 256, 17],
     ),
     halfcheetah=dict(
-        encoder_mlp_layers=[256, 128, 64, 6],
+        encoder_mlp_layers=[256, 256, 256, 6],
     ),
     walker2d=dict(
-        encoder_mlp_layers=[256, 128, 64, 6],
+        encoder_mlp_layers=[256, 256, 256, 6],
     ),
 )
 

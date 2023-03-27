@@ -297,7 +297,9 @@ class HyperActorCritic(ActorCritic):
 
         # self.actor_encoder = model_factory.make_model_encoder_func(cfg, obs_space)
         self.actor_encoder = hyperActor(action_space.shape[0], obs_space['obs'].shape[0], np.array([4,8,16,32,64,128,256]), \
-                                         meta_batch_size = 32, device=torch.device("cuda"), multi_gpu=False)
+                                         meta_batch_size = 32, device=torch.device("cuda"), multi_gpu=False, \
+                                        std_mode= 'multi' if cfg.multi_stddev else 'single', \
+                                        architecture_sampling_mode=cfg.arch_sampling_mode) 
         self.actor_encoder.change_graph()
         self.actor_core = model_factory.make_model_core_func(cfg, action_space.shape[0])
         critic_input_space = spaces.Dict({'obs_arch': spaces.Box(low=0, high=1, shape=(4 + obs_space['obs'].shape[0],))})
@@ -328,7 +330,7 @@ class HyperActorCritic(ActorCritic):
         if cfg.dual_critic:
             self.critic2_linear = nn.Linear(self.critic2_decoder.get_out_size(), 1)
 
-        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space)
+        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space, len(self.actor_encoder.list_of_arcs))
 
         self.apply(self.initialize_weights)
 
@@ -361,18 +363,22 @@ class HyperActorCritic(ActorCritic):
         head_outputs = []
         # for enc in self.encoders:
         #     head_outputs.append(enc(normalized_obs_dict))
-        head_outputs.append(self.actor_encoder(normalized_obs_dict['obs'])[0])
+        encoder_output = self.actor_encoder(normalized_obs_dict['obs'])
+        head_outputs.append(encoder_output[0])
         critic_input = {'obs_arch': torch.cat((normalized_obs_dict['obs'], self.actor_encoder.arch_per_state_dim), dim=1)}
         head_outputs.append(self.critic_encoder(critic_input))
         if self.cfg.dual_critic:
             head_outputs.append(self.critic2_encoder(normalized_obs_dict))
-
-        return torch.cat(head_outputs, dim=1)
+        if self.cfg.multi_stddev:
+            std_dev = encoder_output[1]
+        else:
+            std_dev = None
+        return torch.cat(head_outputs, dim=1), std_dev
 
     def forward_core(self, head_output, rnn_states):
         return self.core_func(head_output, rnn_states)
 
-    def forward_tail(self, core_output, values_only: bool, sample_actions: bool) -> TensorDict:
+    def forward_tail(self, core_output, values_only: bool, sample_actions: bool, std_dev = None) -> TensorDict:
         core_outputs = core_output.chunk(len(self.cores), dim=1)
 
         # second core output corresponds to the critic
@@ -392,7 +398,7 @@ class HyperActorCritic(ActorCritic):
 
         # first core output corresponds to the actor
         actor_decoder_output = self.actor_decoder(core_outputs[0])
-        action_distribution_params, self.last_action_distribution = self.action_parameterization(actor_decoder_output)
+        action_distribution_params, self.last_action_distribution = self.action_parameterization(actor_decoder_output, action_stddevs = std_dev)
 
         result["action_logits"] = action_distribution_params
 
@@ -400,9 +406,9 @@ class HyperActorCritic(ActorCritic):
         return result
 
     def forward(self, normalized_obs_dict, rnn_states, values_only=False, sample_actions = True) -> TensorDict:
-        x = self.forward_head(normalized_obs_dict)
+        x, std_dev = self.forward_head(normalized_obs_dict)
         x, new_rnn_states = self.forward_core(x, rnn_states)
-        result = self.forward_tail(x, values_only, sample_actions=sample_actions)
+        result = self.forward_tail(x, values_only, sample_actions=sample_actions, std_dev=std_dev)
         result["new_rnn_states"] = new_rnn_states
         return result
     

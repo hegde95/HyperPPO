@@ -95,6 +95,8 @@ class hyperActor(nn.Module):
                 self.arch_sampling_probs.append(1/num_archs_with_same_num_layers)
             self.arch_sampling_probs = (1/num_unique_num_layers)*np.array(self.arch_sampling_probs)
 
+        self.sampled_indices = None
+
 
 
 
@@ -265,7 +267,10 @@ class hyperActor(nn.Module):
             If repeat_sample is False, then we sample new architectures (i.e. change the current models) and estimate the weights for those architectures 
         '''
         if not repeat_sample:
-
+            if self.std_mode == 'multi' and self.sampled_indices is not None:
+                for i in self.sampled_indices:
+                    self.log_std[i].requires_grad = False
+                    self.log_std[i].grad = None
             self.sample_arc_indices(mode = self.architecture_sampling_mode)
             
             self.current_shape_inds_vec = [self.list_of_shape_inds[index] for index in self.sampled_indices]
@@ -276,7 +281,10 @@ class hyperActor(nn.Module):
             
             # self.param_counts = [self.get_params(self.list_of_arcs[index]) for index in self.sampled_indices]
             # self.capacities = [get_capacity(self.list_of_arcs[index], self.obs_dim, self.act_dim) for index in self.sampled_indices]
-        
+            if self.std_mode == 'multi':
+                for i in self.sampled_indices:
+                    self.log_std[i].requires_grad = True 
+
         if self.multi_gpu:
             self.multi_ghns = replicate(self.ghn, self.all_devices)
             for i, device in enumerate(self.all_devices):

@@ -76,7 +76,7 @@ class ActionParameterizationContinuousNonAdaptiveStddev(ActionsParameterization)
 class IndentityActionParameterizationContinuousNonAdaptiveStddev(ActionsParameterization):
     """Use a single learned parameter for action stddevs."""
 
-    def __init__(self, cfg, core_out_size, action_space):
+    def __init__(self, cfg, core_out_size, action_space, num_architectures = 1):
         super().__init__(cfg, action_space)
 
         assert not cfg.adaptive_stddev
@@ -94,9 +94,11 @@ class IndentityActionParameterizationContinuousNonAdaptiveStddev(ActionsParamete
         # stddev is a single learned parameter
         initial_stddev = torch.empty([num_action_outputs // 2])
         initial_stddev.fill_(math.log(self.cfg.initial_stddev))
-        self.learned_stddev = nn.Parameter(initial_stddev, requires_grad=True)
+        self.multi_stddev = cfg.multi_stddev
+        if not self.multi_stddev:
+            self.learned_stddev = nn.Parameter(initial_stddev, requires_grad=True)
 
-    def forward(self, actor_core_output: Tensor):
+    def forward(self, actor_core_output: Tensor, action_stddevs = None):
         action_means = self.distribution_linear(actor_core_output)
         if self.tanh_scale > 0:
             # scale the action means to be in the range [-tanh_scale, tanh_scale]
@@ -104,7 +106,9 @@ class IndentityActionParameterizationContinuousNonAdaptiveStddev(ActionsParamete
             action_means = torch.tanh(action_means / self.tanh_scale) * self.tanh_scale
 
         batch_size = action_means.shape[0]
-        action_stddevs = self.learned_stddev.repeat(batch_size, 1)
+        if not self.multi_stddev:
+            action_stddevs = self.learned_stddev.repeat(batch_size, 1)
+            
         action_distribution_params = torch.cat((action_means, action_stddevs), dim=1)
         action_distribution = get_action_distribution(self.action_space, raw_logits=action_distribution_params)
         return action_distribution_params, action_distribution

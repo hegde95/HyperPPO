@@ -550,7 +550,11 @@ class Learner(Configurable):
         # calculate policy head outside of recurrent loop
         with self.timing.add_time("forward_head"):
             head_outputs = self.actor_critic.forward_head(mb.normalized_obs)
-            minibatch_size: int = head_outputs.size(0)
+            if self.cfg.hyper:
+                minibatch_size: int = head_outputs[0].size(0)
+                std_dev = head_outputs[1]
+            else:
+                minibatch_size: int = head_outputs.size(0)
 
         # initial rnn states
         with self.timing.add_time("bptt_initial"):
@@ -559,7 +563,7 @@ class Learner(Configurable):
                 # (i.e. experience collected by another policy)
                 done_or_invalid = torch.logical_or(mb.dones_cpu, ~valids.cpu()).float()
                 head_output_seq, rnn_states, inverted_select_inds = build_rnn_inputs(
-                    head_outputs,
+                    head_outputs[0] if self.cfg.hyper else head_outputs,
                     done_or_invalid,
                     mb.rnn_states,
                     recurrence,
@@ -575,7 +579,7 @@ class Learner(Configurable):
                 core_outputs = build_core_out_from_seq(core_output_seq, inverted_select_inds)
                 del core_output_seq
             else:
-                core_outputs, _ = self.actor_critic.forward_core(head_outputs, rnn_states)
+                core_outputs, _ = self.actor_critic.forward_core(head_outputs[0] if self.cfg.hyper else head_outputs, rnn_states)
 
             del head_outputs
 
@@ -584,7 +588,10 @@ class Learner(Configurable):
 
         with self.timing.add_time("tail"):
             # calculate policy tail outside of recurrent loop
-            result = self.actor_critic.forward_tail(core_outputs, values_only=False, sample_actions=False)
+            if self.cfg.hyper:
+                result = self.actor_critic.forward_tail(core_outputs, values_only=False, sample_actions=False, std_dev=std_dev)
+            else:
+                result = self.actor_critic.forward_tail(core_outputs, values_only=False, sample_actions=False)
             action_distribution = self.actor_critic.action_distribution()
             log_prob_actions = action_distribution.log_prob(mb.actions)
             ratio = torch.exp(log_prob_actions - mb.log_prob_actions)  # pi / pi_old
