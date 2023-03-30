@@ -13,24 +13,27 @@ from torch import Tensor
 from torch.nn import Module
 
 from sample_factory.algo.learning.rnn_utils import build_core_out_from_seq, build_rnn_inputs
+from sample_factory.algo.sampling.batched_sampling import preprocess_actions
 from sample_factory.algo.utils.action_distributions import get_action_distribution, is_continuous_action_space
 from sample_factory.algo.utils.env_info import EnvInfo
 from sample_factory.algo.utils.misc import LEARNER_ENV_STEPS, POLICY_ID_KEY, STATS_KEY, TRAIN_STATS, memory_stats
 from sample_factory.algo.utils.model_sharing import ParameterServer
 from sample_factory.algo.utils.optimizers import Lamb
-from sample_factory.algo.utils.rl_utils import gae_advantages, prepare_and_normalize_obs
+from sample_factory.algo.utils.rl_utils import gae_advantages, prepare_and_normalize_obs, make_dones
 from sample_factory.algo.utils.shared_buffers import policy_device
 from sample_factory.algo.utils.tensor_dict import TensorDict, shallow_recursive_copy
 from sample_factory.algo.utils.torch_utils import masked_select, synchronize, to_scalar
+from sample_factory.algo.utils.env_info import extract_env_info
+from sample_factory.algo.utils.tensor_utils import unsqueeze_tensor
 from sample_factory.cfg.configurable import Configurable
 from sample_factory.model.actor_critic import ActorCritic, create_actor_critic
+from sample_factory.model.model_utils import get_rnn_size
 from sample_factory.utils.attr_dict import AttrDict
 from sample_factory.utils.decay import LinearDecay
 from sample_factory.utils.dicts import iterate_recursively
 from sample_factory.utils.timing import Timing
 from sample_factory.utils.typing import ActionDistribution, Config, InitModelData, PolicyID
 from sample_factory.utils.utils import ensure_dir_exists, experiment_dir, log
-
 
 class LearningRateScheduler:
     def update(self, current_lr, recent_kls):
@@ -251,6 +254,34 @@ class Learner(Configurable):
         self._apply_lr(self.curr_lr)
 
         self.is_initialized = True
+
+        # adding a possible evaluation here
+        if self.cfg.eval_every_steps > 0:
+            from sample_factory.algo.utils.make_env import make_env_func_batched
+            import copy
+
+            self.eval_cfg = copy.deepcopy(self.cfg)
+            self.eval_cfg.env_agents = 8*8
+            self.eval_cfg.num_envs = 1
+
+            self.eval_env = make_env_func_batched(
+                self.eval_cfg, env_config=AttrDict(worker_index=0, vector_index=0, env_id=0), render_mode=None
+            )
+            self.env_info = extract_env_info(self.eval_env, self.eval_cfg)
+            
+            if self.cfg.hyper:
+                self.list_of_test_archs = [
+                    [4, 4],
+                    [16],
+                    [16, 16, 16],
+                    [32, 32, 32],
+                    [64, 64, 64, 64],
+                    [128, 128, 128, 128],
+                    [256, 256, 256],
+                    [256, 256, 256, 256],
+                ]
+                self.list_of_test_arch_indices = [[i for i,arc in enumerate(self.actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in self.list_of_test_archs]
+                self.list_of_test_shape_inds = torch.stack([self.actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(self.list_of_test_arch_indices)])
 
         return model_initialization_data(self.cfg, self.policy_id, self.actor_critic, self.train_step, self.device)
 
@@ -1126,3 +1157,71 @@ class Learner(Configurable):
                 stats[STATS_KEY] = memory_stats("learner", self.device)
 
             return stats
+    
+    
+    def eval(self, stats: Dict) -> Dict:
+        if self.cfg.hyper:
+            self.actor_critic.actor_encoder.set_graph(self.list_of_test_arch_indices, self.list_of_test_shape_inds)
+
+        episode_rewards = np.zeros((self.eval_env.num_agents))
+        obs, infos = self.eval_env.reset()
+        rnn_states = torch.zeros([self.eval_env.num_agents, get_rnn_size(self.cfg)], dtype=torch.float32, device=self.device)
+        episode_reward = None
+        finished_episode = [False for _ in range(self.eval_env.num_agents)]
+        with torch.no_grad():
+            while not all(finished_episode):
+                normalized_obs = prepare_and_normalize_obs(self.actor_critic, obs)
+                if self.cfg.hyper:
+                    policy_outputs = self.actor_critic(normalized_obs, rnn_states, sample_actions=True)
+                else:
+                    policy_outputs = self.actor_critic(normalized_obs, rnn_states)
+
+                # sample actions from the distribution by default
+                actions = policy_outputs["actions"]
+
+                # actions shape should be [num_agents, num_actions] even if it's [1, 1]
+                if actions.ndim == 1:
+                    actions = unsqueeze_tensor(actions, dim=-1)
+                actions = preprocess_actions(self.env_info, actions)
+
+
+
+                obs, rew, terminated, truncated, infos = self.eval_env.step(actions)
+                dones = make_dones(terminated, truncated)
+                infos = [{} for _ in range(self.env_info.num_agents)] if infos is None else infos
+
+                if episode_reward is None:
+                    episode_reward = rew.float().clone()
+                else:
+                    episode_reward += rew.float()
+
+                dones = dones.cpu().numpy()
+                for agent_i, done_flag in enumerate(dones):
+                    if done_flag:
+                        finished_episode[agent_i] = True
+                        rew = episode_reward[agent_i].item()
+                        episode_rewards[agent_i] = rew
+
+
+
+                        episode_reward[agent_i] = 0
+
+                        # reward_list.append(true_objective)
+
+
+            if all(finished_episode):
+                if self.cfg.hyper:
+                    average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
+                    for i in range(len(self.list_of_test_arch_indices)):
+                        stats[f"test_chart/{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
+                    stats[f"test_chart/all_average"] = average_reward_per_arch.mean()
+                else:
+                    stats[f"test_chart/baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
+                    stats[f"test_chart/all_average"] = episode_rewards.mean()
+
+
+
+        if self.cfg.hyper:
+            self.actor_critic.actor_encoder.change_graph(repeat_sample = False)
+
+        return stats

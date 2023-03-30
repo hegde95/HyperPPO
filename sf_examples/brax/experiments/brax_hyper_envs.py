@@ -8,7 +8,7 @@ _params = ParamGrid(
         ("env", ["humanoid"]),  #["ant", "humanoid", "halfcheetah", "walker2d"]
         ("dual_critic", [True, False]),
         ("multi_stddev", [True, False]),
-        ("arch_sampling_mode", ["uniform"]),
+        ("arch_sampling_mode", ["biased"]),
 
     ]
 )

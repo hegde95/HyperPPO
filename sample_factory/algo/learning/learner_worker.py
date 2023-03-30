@@ -152,6 +152,10 @@ class LearnerWorker(HeartbeatStoppableEventLoopObject, Configurable):
         self.training_iteration_since_resume += 1
         self.training_batch_released.emit(batch_idx, self.training_iteration_since_resume)
         self.finished_training_iteration.emit(self.training_iteration_since_resume)
+
+        if self.cfg.eval_every_steps > 0 and self.training_iteration_since_resume % self.cfg.eval_every_steps == 0:
+            stats = self.learner.eval(stats)
+
         if stats is not None:
             self.report_msg.emit(stats)
 

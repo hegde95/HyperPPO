@@ -188,6 +188,12 @@ def add_extra_params_func(parser) -> None:
         type=str,
         help="the architecture sampling method, has to be in [biased, uniform, sequential]",
     )
+    p.add_argument(
+        "--eval_every_steps",
+        default=1,
+        type=int,
+        help="How often to evaluate the policy, 0 will disable evaluation",
+    )
 
 def override_default_params_func(env, parser):
     """Most of these parameters are the same as IsaacGymEnvs default config files."""
@@ -287,16 +293,16 @@ def main():
         cfg.seed = 000
     train_status = run_rl(cfg)
 
-    test_cfg = parse_brax_cfg(evaluation=True)
-    if test_cfg.with_wandb:
-        import wandb
-        wandb.finish()
-    test_status = enjoy(test_cfg, following_train=True)
-    if test_cfg.with_wandb:
-        import wandb
-        wandb.finish()
-        # wait a minute for wandb to finish
-        time.sleep(60)
+    # test_cfg = parse_brax_cfg(evaluation=True)
+    # if test_cfg.with_wandb:
+    #     import wandb
+    #     wandb.finish()
+    # test_status = enjoy(test_cfg, following_train=True)
+    # if test_cfg.with_wandb:
+    #     import wandb
+    #     wandb.finish()
+    #     # wait a minute for wandb to finish
+    #     time.sleep(60)
 
     return train_status
 
