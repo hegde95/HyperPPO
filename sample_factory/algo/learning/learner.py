@@ -1213,12 +1213,12 @@ class Learner(Configurable):
                 if self.cfg.hyper:
                     average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
                     for i in range(len(self.list_of_test_arch_indices)):
-                        stats[f"test_chart/{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
-                    stats[f"test_chart/all_average"] = average_reward_per_arch.mean()
+                        stats['test'][f"{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
+                    stats['test'][f"all_average"] = average_reward_per_arch.mean()
                 else:
-                    stats[f"test_chart/baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
-                    stats[f"test_chart/all_average"] = episode_rewards.mean()
-
+                    stats['test'][f"baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
+                    stats['test'][f"all_average"] = episode_rewards.mean()
+            
 
 
         if self.cfg.hyper:

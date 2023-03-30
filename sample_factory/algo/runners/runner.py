@@ -24,6 +24,7 @@ from sample_factory.algo.utils.misc import (
     STATS_KEY,
     TIMING_STATS,
     TRAIN_STATS,
+    TEST_STATS,
     ExperimentStatus,
 )
 from sample_factory.algo.utils.shared_buffers import BufferMgr
@@ -302,6 +303,12 @@ class Runner(EventLoopObject, Configurable):
         for key in ["version_diff_min", "version_diff_max", "version_diff_avg"]:
             if key in train_stats:
                 runner.policy_lag[policy_id][key] = train_stats[key]
+        
+        if TEST_STATS in msg.keys():
+            test_stats = msg[TEST_STATS]
+            for key, scalar in test_stats.items():
+                runner.writers[policy_id].add_scalar(f"test/{key}", scalar, runner.env_steps[policy_id])
+
 
     @staticmethod
     def _samples_stats_handler(runner, msg, policy_id):

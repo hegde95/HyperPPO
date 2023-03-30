@@ -10,6 +10,7 @@ EPS = 1e-8
 EPISODIC = "episodic"
 LEARNER_ENV_STEPS = "learner_env_steps"
 TRAIN_STATS = "train"
+TEST_STATS = "test"
 TIMING_STATS = "timing"
 STATS_KEY = "stats"
 SAMPLES_COLLECTED = "samples_collected"

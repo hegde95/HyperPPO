@@ -19,7 +19,7 @@ from sample_factory.train import run_rl
 from sample_factory.utils.typing import Config, Env
 from sample_factory.utils.utils import log, str2bool
 
-from sf_examples.brax.enjoy_hyper_brax import enjoy
+# from sf_examples.brax.enjoy_hyper_brax import enjoy
 
 BRAX_EVALUATION = False
 torch.ones(1, device="cuda")  # init torch cuda before jax
@@ -190,7 +190,7 @@ def add_extra_params_func(parser) -> None:
     )
     p.add_argument(
         "--eval_every_steps",
-        default=1,
+        default=20,
         type=int,
         help="How often to evaluate the policy, 0 will disable evaluation",
     )
@@ -241,7 +241,7 @@ def override_default_params_func(env, parser):
         # use_env_info_cache=True,  # speeds up startup
 
         wandb_project = "hyperppo",
-        save_milestones_sec = 720,
+        save_milestones_sec = 5760,
 
     )
 
