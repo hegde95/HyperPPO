@@ -15,6 +15,7 @@ from sample_factory.cfg.cfg import (
     add_pbt_args,
     add_rl_args,
     add_wandb_args,
+    add_hyper_args
 )
 from sample_factory.utils.attr_dict import AttrDict
 from sample_factory.utils.typing import Config
@@ -44,6 +45,7 @@ def parse_sf_args(
     add_default_env_args(p)
     add_wandb_args(p)
     add_pbt_args(p)
+    add_hyper_args(p)
 
     if evaluation:
         add_eval_args(p)

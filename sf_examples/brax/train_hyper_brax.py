@@ -3,7 +3,6 @@ Brax env integration.
 """
 import sys
 from typing import Dict, List, Optional, Tuple, Union
-import time
 
 import gymnasium as gym
 import numpy as np
@@ -18,8 +17,6 @@ from sample_factory.envs.env_utils import register_env
 from sample_factory.train import run_rl
 from sample_factory.utils.typing import Config, Env
 from sample_factory.utils.utils import log, str2bool
-
-# from sf_examples.brax.enjoy_hyper_brax import enjoy
 
 BRAX_EVALUATION = False
 torch.ones(1, device="cuda")  # init torch cuda before jax
@@ -158,42 +155,42 @@ def add_extra_params_func(parser) -> None:
         "video generation, i.e. with push_to_hub",
     )
 
-    p.add_argument(
-        "--hyper",
-        default=True,
-        type=str2bool,
-        help="Train a hyper policy",
-    )
-    p.add_argument(
-        "--meta_batch_size",
-        default=32,
-        type=int,
-        help="Number of architectures to train in parallel",
-    )
-    p.add_argument(
-        "--dual_critic",
-        default=True,
-        type=str2bool,
-        help="Add a second critic to the policy to have cross architecture regularization",
-    )
-    p.add_argument(
-        "--multi_stddev",
-        default=True,
-        type=str2bool,
-        help="If true we use a different stddev for each architecture",
-    )
-    p.add_argument(
-        "--arch_sampling_mode",
-        default="biased",
-        type=str,
-        help="the architecture sampling method, has to be in [biased, uniform, sequential]",
-    )
-    p.add_argument(
-        "--eval_every_steps",
-        default=20,
-        type=int,
-        help="How often to evaluate the policy, 0 will disable evaluation",
-    )
+    # p.add_argument(
+    #     "--hyper",
+    #     default=True,
+    #     type=str2bool,
+    #     help="Train a hyper policy",
+    # )
+    # p.add_argument(
+    #     "--meta_batch_size",
+    #     default=32,
+    #     type=int,
+    #     help="Number of architectures to train in parallel",
+    # )
+    # p.add_argument(
+    #     "--dual_critic",
+    #     default=True,
+    #     type=str2bool,
+    #     help="Add a second critic to the policy to have cross architecture regularization",
+    # )
+    # p.add_argument(
+    #     "--multi_stddev",
+    #     default=True,
+    #     type=str2bool,
+    #     help="If true we use a different stddev for each architecture",
+    # )
+    # p.add_argument(
+    #     "--arch_sampling_mode",
+    #     default="biased",
+    #     type=str,
+    #     help="the architecture sampling method, has to be in [biased, uniform, sequential]",
+    # )
+    # p.add_argument(
+    #     "--eval_every_steps",
+    #     default=20,
+    #     type=int,
+    #     help="How often to evaluate the policy, 0 will disable evaluation",
+    # )
 
 def override_default_params_func(env, parser):
     """Most of these parameters are the same as IsaacGymEnvs default config files."""
@@ -291,20 +288,8 @@ def main():
     cfg = parse_brax_cfg()
     if cfg.seed is None:
         cfg.seed = 000
-    train_status = run_rl(cfg)
-
-    # test_cfg = parse_brax_cfg(evaluation=True)
-    # if test_cfg.with_wandb:
-    #     import wandb
-    #     wandb.finish()
-    # test_status = enjoy(test_cfg, following_train=True)
-    # if test_cfg.with_wandb:
-    #     import wandb
-    #     wandb.finish()
-    #     # wait a minute for wandb to finish
-    #     time.sleep(60)
-
-    return train_status
+    status = run_rl(cfg)
+    return status
 
 
 if __name__ == "__main__":

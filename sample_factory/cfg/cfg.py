@@ -5,6 +5,43 @@ from os.path import join
 
 from sample_factory.utils.utils import str2bool
 
+def add_hyper_args(p: ArgumentParser):
+    p.add_argument(
+        "--hyper",
+        default=True,
+        type=str2bool,
+        help="Train a hyper policy",
+    )
+    p.add_argument(
+        "--meta_batch_size",
+        default=32,
+        type=int,
+        help="Number of architectures to train in parallel",
+    )
+    p.add_argument(
+        "--dual_critic",
+        default=True,
+        type=str2bool,
+        help="Add a second critic to the policy to have cross architecture regularization",
+    )
+    p.add_argument(
+        "--multi_stddev",
+        default=True,
+        type=str2bool,
+        help="If true we use a different stddev for each architecture",
+    )
+    p.add_argument(
+        "--arch_sampling_mode",
+        default="biased",
+        type=str,
+        help="the architecture sampling method, has to be in [biased, uniform, sequential]",
+    )
+    p.add_argument(
+        "--eval_every_steps",
+        default=20,
+        type=int,
+        help="How often to evaluate the policy, 0 will disable evaluation",
+    )    
 
 def add_basic_cli_args(p: ArgumentParser):
     p.add_argument("-h", "--help", action="store_true", help="Print the help message", required=False)
