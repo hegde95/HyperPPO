@@ -131,7 +131,7 @@ def add_extra_params_func(parser) -> None:
     p = parser
     p.add_argument(
         "--env_agents",
-        default=2048,
+        default=4096,
         type=int,
         help="Num. agents in a vectorized env",
     )
@@ -155,7 +155,6 @@ def add_extra_params_func(parser) -> None:
         "video generation, i.e. with push_to_hub",
     )
 
-
 def override_default_params_func(env, parser):
     """Most of these parameters are the same as IsaacGymEnvs default config files."""
 
@@ -166,17 +165,17 @@ def override_default_params_func(env, parser):
         num_envs_per_worker=1,
         worker_num_splits=1,
         actor_worker_gpus=[0],  # obviously need a GPU
-        train_for_env_steps=100000000,
+        train_for_env_steps=2_000_000_000,
         use_rnn=False,
         adaptive_stddev=False,
         policy_initialization="torch_default",
         env_gpu_actions=True,
         reward_scale=0.01,
         max_grad_norm=1.0,
-        rollout=32,
-        batch_size=32768,
-        num_batches_per_epoch=2,
-        num_epochs=5,
+        rollout=128,
+        batch_size=65536,
+        num_batches_per_epoch=8,
+        num_epochs=2,
         ppo_clip_ratio=0.2,
         ppo_clip_value=1.0,
         value_loss_coeff=2.0,
@@ -200,6 +199,10 @@ def override_default_params_func(env, parser):
         async_rl=False,
         experiment_summaries_interval=3,  # experiments are short so we should save summaries often
         # use_env_info_cache=True,  # speeds up startup
+
+        wandb_project = "hyperppo",
+        save_milestones_sec = 28800,
+
     )
 
     # override default config parameters for specific envs
@@ -211,17 +214,17 @@ def override_default_params_func(env, parser):
 # add more envs here analogously (env names should match config file names in IGE)
 env_configs = dict(
     ant=dict(
-        encoder_mlp_layers=[256, 128, 64],
+        encoder_mlp_layers=[256, 256, 256, 6],
         save_every_sec=15,
     ),
     humanoid=dict(
-        encoder_mlp_layers=[512, 256, 128],
+        encoder_mlp_layers=[256, 256, 256, 17],
     ),
     halfcheetah=dict(
-        encoder_mlp_layers=[256, 128, 64],
+        encoder_mlp_layers=[256, 256, 256, 6],
     ),
     walker2d=dict(
-        encoder_mlp_layers=[256, 128, 64],
+        encoder_mlp_layers=[256, 256, 256, 6],
     ),
 )
 
@@ -246,6 +249,8 @@ def main():
     """Script entry point."""
     register_brax_custom_components()
     cfg = parse_brax_cfg()
+    if cfg.seed is None:
+        cfg.seed = 000
     status = run_rl(cfg)
     return status
 
