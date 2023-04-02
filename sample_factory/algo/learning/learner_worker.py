@@ -14,7 +14,7 @@ from sample_factory.algo.learning.learner import Learner
 from sample_factory.algo.utils.context import SampleFactoryContext, set_global_context
 from sample_factory.algo.utils.env_info import EnvInfo
 from sample_factory.algo.utils.heartbeat import HeartbeatStoppableEventLoopObject
-from sample_factory.algo.utils.misc import LEARNER_ENV_STEPS, POLICY_ID_KEY
+from sample_factory.algo.utils.misc import LEARNER_ENV_STEPS, POLICY_ID_KEY, TEST_STATS
 from sample_factory.algo.utils.model_sharing import ParameterServer
 from sample_factory.algo.utils.shared_buffers import BufferMgr
 from sample_factory.algo.utils.torch_utils import init_torch_runtime
@@ -22,7 +22,6 @@ from sample_factory.cfg.configurable import Configurable
 from sample_factory.utils.gpu_utils import cuda_envvars_for_policy
 from sample_factory.utils.typing import Config, PolicyID
 from sample_factory.utils.utils import init_file_logger, log
-
 
 def init_learner_process(sf_context: SampleFactoryContext, learner_worker: LearnerWorker):
     set_global_context(sf_context)
@@ -154,7 +153,7 @@ class LearnerWorker(HeartbeatStoppableEventLoopObject, Configurable):
         self.finished_training_iteration.emit(self.training_iteration_since_resume)
 
         if self.cfg.eval_every_steps > 0 and self.training_iteration_since_resume % self.cfg.eval_every_steps == 0:
-            stats['test'] = {'training_iteration_since_resume':self.training_iteration_since_resume}
+            stats[TEST_STATS] = {'training_iteration_since_resume':self.training_iteration_since_resume}
             stats = self.learner.eval(stats)
 
         if stats is not None:

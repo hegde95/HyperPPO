@@ -16,7 +16,7 @@ from sample_factory.algo.learning.rnn_utils import build_core_out_from_seq, buil
 from sample_factory.algo.sampling.batched_sampling import preprocess_actions
 from sample_factory.algo.utils.action_distributions import get_action_distribution, is_continuous_action_space
 from sample_factory.algo.utils.env_info import EnvInfo
-from sample_factory.algo.utils.misc import LEARNER_ENV_STEPS, POLICY_ID_KEY, STATS_KEY, TRAIN_STATS, memory_stats
+from sample_factory.algo.utils.misc import LEARNER_ENV_STEPS, POLICY_ID_KEY, STATS_KEY, TRAIN_STATS, TEST_STATS, memory_stats
 from sample_factory.algo.utils.model_sharing import ParameterServer
 from sample_factory.algo.utils.optimizers import Lamb
 from sample_factory.algo.utils.rl_utils import gae_advantages, prepare_and_normalize_obs, make_dones
@@ -1213,11 +1213,11 @@ class Learner(Configurable):
                 if self.cfg.hyper:
                     average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
                     for i in range(len(self.list_of_test_arch_indices)):
-                        stats['test'][f"{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
-                    stats['test'][f"all_average"] = average_reward_per_arch.mean()
+                        stats[TEST_STATS][f"{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
+                    stats[TEST_STATS][f"all_average"] = average_reward_per_arch.mean()
                 else:
-                    stats['test'][f"baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
-                    stats['test'][f"all_average"] = episode_rewards.mean()
+                    stats[TEST_STATS][f"baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
+                    stats[TEST_STATS][f"all_average"] = episode_rewards.mean()
             
 
 

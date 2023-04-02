@@ -152,6 +152,7 @@ class Runner(EventLoopObject, Configurable):
             LEARNER_ENV_STEPS: [self._learner_steps_handler],
             EPISODIC: [self._episodic_stats_handler],
             TRAIN_STATS: [self._train_stats_handler],
+            TEST_STATS: [self._test_stats_handler],
             SAMPLES_COLLECTED: [self._samples_stats_handler],
         }
 
@@ -303,7 +304,9 @@ class Runner(EventLoopObject, Configurable):
         for key in ["version_diff_min", "version_diff_max", "version_diff_avg"]:
             if key in train_stats:
                 runner.policy_lag[policy_id][key] = train_stats[key]
-        
+
+    @staticmethod
+    def _test_stats_handler(runner: Runner, msg: Dict, policy_id: PolicyID) -> None:
         if TEST_STATS in msg.keys():
             test_stats = msg[TEST_STATS]
             for key, scalar in test_stats.items():
