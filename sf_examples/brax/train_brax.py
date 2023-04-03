@@ -181,7 +181,6 @@ def override_default_params_func(env, parser):
         value_loss_coeff=2.0,
         exploration_loss_coeff=0.0,
         nonlinearity="elu",
-        encoder_mlp_layers=[256, 128, 64],
         actor_critic_share_weights=True,
         learning_rate=3e-4,
         lr_schedule="kl_adaptive_epoch",
