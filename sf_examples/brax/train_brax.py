@@ -214,7 +214,7 @@ def override_default_params_func(env, parser):
 # add more envs here analogously (env names should match config file names in IGE)
 env_configs = dict(
     ant=dict(
-        encoder_mlp_layers=[256, 256, 256, 6],
+        encoder_mlp_layers=[256, 256, 256, 8],
         save_every_sec=15,
     ),
     humanoid=dict(

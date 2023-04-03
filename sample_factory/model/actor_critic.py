@@ -155,7 +155,7 @@ class ActorCriticSharedWeights(ActorCritic):
         decoder_out_size: int = self.decoder.get_out_size()
 
         self.critic_linear = nn.Linear(decoder_out_size, 1)
-        self.action_parameterization = self.get_action_parameterization(decoder_out_size)
+        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.encoder.get_out_size(), self.action_space)
 
         self.apply(self.initialize_weights)
 
@@ -217,7 +217,7 @@ class ActorCriticSeparateWeights(ActorCritic):
         self.decoders = [self.actor_decoder, self.critic_decoder]
 
         self.critic_linear = nn.Linear(self.critic_decoder.get_out_size(), 1)
-        self.action_parameterization = self.get_action_parameterization(self.critic_decoder.get_out_size())
+        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space)
 
         self.apply(self.initialize_weights)
 
@@ -330,7 +330,7 @@ class HyperActorCritic(ActorCritic):
         if cfg.dual_critic:
             self.critic2_linear = nn.Linear(self.critic2_decoder.get_out_size(), 1)
 
-        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space, len(self.actor_encoder.list_of_arcs))
+        self.action_parameterization = IndentityActionParameterizationContinuousNonAdaptiveStddev(self.cfg, self.actor_decoder.get_out_size(), self.action_space)
 
         self.apply(self.initialize_weights)
 

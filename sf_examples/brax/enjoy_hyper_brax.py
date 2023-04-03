@@ -2,7 +2,7 @@ import sys
 import os
 
 from sample_factory.enjoy import *
-from sf_examples.brax.train_hyper_brax import parse_brax_cfg, register_brax_custom_components
+from sf_examples.brax.train_brax import parse_brax_cfg, register_brax_custom_components
 from sample_factory.utils.wandb_utils import init_wandb
 from tensorboardX import SummaryWriter
 

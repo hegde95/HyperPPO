@@ -76,7 +76,7 @@ class ActionParameterizationContinuousNonAdaptiveStddev(ActionsParameterization)
 class IndentityActionParameterizationContinuousNonAdaptiveStddev(ActionsParameterization):
     """Use a single learned parameter for action stddevs."""
 
-    def __init__(self, cfg, core_out_size, action_space, num_architectures = 1):
+    def __init__(self, cfg, core_out_size, action_space):
         super().__init__(cfg, action_space)
 
         assert not cfg.adaptive_stddev
@@ -94,7 +94,7 @@ class IndentityActionParameterizationContinuousNonAdaptiveStddev(ActionsParamete
         # stddev is a single learned parameter
         initial_stddev = torch.empty([num_action_outputs // 2])
         initial_stddev.fill_(math.log(self.cfg.initial_stddev))
-        self.multi_stddev = cfg.multi_stddev
+        self.multi_stddev = cfg.multi_stddev and cfg.hyper
         if not self.multi_stddev:
             self.learned_stddev = nn.Parameter(initial_stddev, requires_grad=True)
 
