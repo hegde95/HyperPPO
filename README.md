@@ -25,6 +25,11 @@ pip install jaxlib-0.3.25+cuda11.cudnn82-cp39-cp39-manylinux2014_x86_64.whl
 
 ```
 
+Add the following line to .bashrc to avoid running into GPU memory issues:
+```
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+```
+
 Run:
 ```
 python -m sample_factory.launcher.run --run=sf_examples.brax.experiments.brax_hyper_envs --backend=processes --max_parallel=4 --experiments_per_gpu=1 --num_gpus=4
