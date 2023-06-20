@@ -27,6 +27,10 @@ pip install jax==0.3.25
 Download the jax wheel file from https://drive.google.com/file/d/1dBwmHhFUe5bhBN3Zw48MzhXGhhDVL0sc/view?usp=sharing
 
 ```
+pip install gdown
+
+gdown https://drive.google.com/file/d/1dBwmHhFUe5bhBN3Zw48MzhXGhhDVL0sc/view?usp=sharing
+
 pip install jaxlib-0.3.25+cuda11.cudnn82-cp39-cp39-manylinux2014_x86_64.whl 
 ```
 
