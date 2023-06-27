@@ -53,12 +53,12 @@ def _patch_env(env: Union["gym.Env", gymnasium.Env]) -> gymnasium.Env:
     if isinstance(env, gymnasium.Env):
         return env
 
-    if not gym_installed or not isinstance(env, gym.Env):
-        raise ValueError(
-            f"The environment is of type {type(env)}, not a Gymnasium "
-            f"environment. In this case, we expect OpenAI Gym to be "
-            f"installed and the environment to be an OpenAI Gym environment."
-        )
+    # if not gym_installed or not isinstance(env, gym.Env):
+    #     raise ValueError(
+    #         f"The environment is of type {type(env)}, not a Gymnasium "
+    #         f"environment. In this case, we expect OpenAI Gym to be "
+    #         f"installed and the environment to be an OpenAI Gym environment."
+    #     )
 
     try:
         import shimmy
