@@ -64,6 +64,7 @@ def override_params_for_batched_sampling(cfg):
 
     cfg.encoder_mlp_layers = [512, 512, 4]
     cfg.batch_size = 276480
+    cfg.meta_batch_size = 16
     
 
 class TorchWrapper(gym.Wrapper):
@@ -129,10 +130,11 @@ def make_parallel_quadrotor_env(env_name, cfg, env_config, render_mode):
     return TorchWrapper(SubprocVecEnv([make_env(i) for i in range(cfg.env_agents)]), num_agents=cfg.env_agents)
 
 
-def register_swarm_components():
+def register_swarm_components(cfg):
     
     register_env("quadrotor_multi", make_parallel_quadrotor_env)
-    register_models()
+    if not cfg.hyper:
+        register_models()
 
 def parse_swarm_cfg(argv=None, evaluation=False):
     parser, partial_cfg = parse_sf_args(argv=argv, evaluation=evaluation)
@@ -144,15 +146,16 @@ def parse_swarm_cfg(argv=None, evaluation=False):
 
 def main():
     """Script entry point."""
-    register_swarm_components()
     SINGLE_CLI = QUAD_BASELINE_CLI + (
-    ' --async_rl=False --serial_mode=True --num_workers=16 --num_envs_per_worker=2 --rollout=128 --batch_size=2048 '
-    '--num_batches_per_epoch=4 '
+        ' '
+        # ' --async_rl=False --serial_mode=True --num_workers=16 --num_envs_per_worker=2 --rollout=128 --batch_size=2048 '
+        # '--num_batches_per_epoch=4 '
     ) + (
         " ".join(sys.argv[1:])
     )
     cfg = parse_swarm_cfg(argv=SINGLE_CLI.split()[3:], evaluation=False)
     override_params_for_batched_sampling(cfg)
+    register_swarm_components(cfg)
     status = run_rl(cfg)
     return status
 

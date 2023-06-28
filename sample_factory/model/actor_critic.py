@@ -297,7 +297,7 @@ class HyperActorCritic(ActorCritic):
 
         # self.actor_encoder = model_factory.make_model_encoder_func(cfg, obs_space)
         self.actor_encoder = hyperActor(action_space.shape[0], obs_space['obs'].shape[0], np.array([4,8,16,32,64,128,256]), \
-                                         meta_batch_size = 32, device=torch.device("cuda"), multi_gpu=False, \
+                                        meta_batch_size = cfg.meta_batch_size, device=torch.device("cuda"), multi_gpu=False, \
                                         std_mode= 'multi' if cfg.multi_stddev else 'single', \
                                         architecture_sampling_mode=cfg.arch_sampling_mode) 
         self.actor_encoder.change_graph()
