@@ -63,7 +63,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.worker_num_splits = 1
 
     cfg.encoder_mlp_layers = [512, 512, 4]
-    cfg.batch_size = 276480
+    cfg.batch_size = 6144
     cfg.meta_batch_size = 16
     
 

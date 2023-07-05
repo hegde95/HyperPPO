@@ -45,3 +45,8 @@ Run:
 ```
 python -m sample_factory.launcher.run --run=sf_examples.brax.experiments.brax_hyper_envs --backend=processes --max_parallel=4 --experiments_per_gpu=1 --num_gpus=4
 ```
+
+Drone experiment:
+```
+python -m sf_examples.swarm.train_swarm --env quadrotor_multi --experiment hyper_test2 --train_dir dummy --train_for_env_steps 1_000_000_000 --dual_critic False --multi_stddev True --arch_sampling_mode biased --hyper True --with_wandb True --wandb_tags debug --meta_batch_size 16 --continuous_tanh_scale 15
+```
