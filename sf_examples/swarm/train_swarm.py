@@ -65,7 +65,8 @@ def override_params_for_batched_sampling(cfg):
     cfg.encoder_mlp_layers = [512, 512, 4]
     cfg.batch_size = 6144
     cfg.meta_batch_size = 16
-    
+    cfg.wandb_project = "hyperppo"
+    cfg.save_milestones_sec = 28800    
 
 class TorchWrapper(gym.Wrapper):
     def __init__(self, env, num_agents):
