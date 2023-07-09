@@ -68,6 +68,33 @@ def override_params_for_batched_sampling(cfg):
     cfg.wandb_project = "hyperppo"
     cfg.save_milestones_sec = 28800    
 
+    cfg.use_rnn=False
+    cfg.adaptive_stddev=False
+    cfg.policy_initialization="torch_default"
+    cfg.reward_scale=1
+    # cfg.max_grad_norm=1.0
+    cfg.num_batches_per_epoch=1
+    cfg.num_epochs=8
+    cfg.ppo_clip_ratio=0.2
+    cfg.ppo_clip_value=1.0
+    cfg.value_loss_coeff=2.0
+    cfg.exploration_loss_coeff=0.008
+    cfg.exploration_loss = "entropy"
+    cfg.nonlinearity="tanh"
+    cfg.actor_critic_share_weights=False
+    cfg.learning_rate=3e-4
+    cfg.lr_schedule="kl_adaptive_epoch"
+    cfg.lr_schedule_kl_threshold=0.008
+    cfg.lr_adaptive_max=2e-3
+    cfg.shuffle_minibatches=False
+    cfg.gamma=0.99
+    cfg.gae_lambda=0.95
+    cfg.with_vtrace=False
+    cfg.value_bootstrap=False
+    cfg.normalize_input=True
+    cfg.normalize_returns=True
+    # save_best_after=int(5e6)
+
 class TorchWrapper(gym.Wrapper):
     def __init__(self, env, num_agents):
         super().__init__(env)

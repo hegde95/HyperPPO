@@ -5,17 +5,18 @@ from sample_factory.utils.algo_version import ALGO_VERSION
 _params = ParamGrid(
     [
         ("seed", seeds(4)),
-        ("env", ["quadrotor_multi"]),  #["ant", "humanoid", "halfcheetah", "walker2d"]
-        # ("dual_critic", [True, False]),
-        # ("multi_stddev", [True, False]),
+        ("env", ["quadrotor_multi"]),
+        ("multi_stddev", [False]),
+        # ("dual_critic", [False]),
         # ("arch_sampling_mode", ["biased"]),
+        ("eval_every_steps", [0]),
 
     ]
 )
 
 vstr = f"hyper"
 
-cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm --hyper False --wandb_user khegde --wandb_group paper_bench_swarm --train_for_env_steps 1_000_000_000"
+cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm7 --hyper False --wandb_user khegde --wandb_group paper_bench_swarm_basic2 --train_for_env_steps 1_000_000_000 --meta_batch_size 16 --continuous_tanh_scale 0"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)
