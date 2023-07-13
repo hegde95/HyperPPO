@@ -18,6 +18,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 import gymnasium as gym
 import numpy as np
 import torch
+import torch.nn as nn
 from sample_factory.model.encoder import Encoder
 from sample_factory.algo.utils.context import global_model_factory
 
@@ -36,7 +37,18 @@ def add_more_quadrotors_env_args(env, parser):
 class AppendedQuadMultiEncoder(QuadMultiEncoder):
     def __init__(self, cfg, obs_space):
         super().__init__(cfg, obs_space)
-        self.appended_fc = torch.nn.Linear(512, 4)
+        self.self_encoder = nn.Sequential(
+            nn.Linear(self.self_obs_dim, 4),
+            nn.Tanh(),
+            nn.Linear(4, 4),
+            nn.Tanh(),
+        )        
+        self.feed_forward = nn.Sequential(
+            nn.Identity(),
+        )
+
+        self.encoder_out_size = 4
+        self.appended_fc = torch.nn.Linear(4, 4)
 
     def get_out_size(self) -> int:
         return 4
