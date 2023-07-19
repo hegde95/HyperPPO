@@ -103,8 +103,8 @@ def override_params_for_batched_sampling(cfg):
     cfg.gae_lambda=1.0
     cfg.with_vtrace=False
     cfg.value_bootstrap=False
-    cfg.normalize_input=True
-    cfg.normalize_returns=True
+    cfg.normalize_input=False
+    cfg.normalize_returns=False
     # save_best_after=int(5e6)
 
 class TorchWrapper(gym.Wrapper):
