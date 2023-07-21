@@ -5,15 +5,18 @@ from sample_factory.envs.env_utils import register_env
 from swarm_rl.env_wrappers.quad_utils import make_quadrotor_env
 from typing import Any
 from hyper.ghn_modules import MLP_GHN, MlpNetwork
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 
 
 
 
 def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
-    verbose = False
+    verbose = True
 
-    arch_to_test = [256, 256]
+    list_of_test_archs = [
+                    [16],                                   
+                ]
     cfg = load_from_checkpoint(cfg)
 
     eval_env_frameskip: int = cfg.env_frameskip if cfg.eval_env_frameskip is None else cfg.eval_env_frameskip
@@ -31,6 +34,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     cfg.eval_deterministic = True
 
     render_mode = "human"
+    # render_mode = None
     if cfg.save_video:
         render_mode = "rgb_array"
     elif cfg.no_render:
@@ -59,13 +63,17 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     ghn = actor_critic.actor_encoder.ghn
     ghn.eval()    
 
-    test_arch_model = MlpNetwork(fc_layers=arch_to_test, inp_dim = env.observation_space['obs'].shape[0], out_dim = env.action_space.shape[0]).to(device=device)
-    
-    arch_index = [i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == arch_to_test][0]
-    shape_ind = actor_critic.actor_encoder.list_of_shape_inds[arch_index]
-    shape_ind = shape_ind[:torch.where(shape_ind == -1.0)[0][0]]
+    # test_arch_model = MlpNetwork(fc_layers=arch_to_test, inp_dim = env.observation_space['obs'].shape[0], out_dim = env.action_space.shape[0]).to(device=device)
+    list_of_test_arch_indices = [[i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
+    list_of_test_shape_inds = torch.stack([actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
+
+    # arch_index = [i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == arch_to_test][0]
+    # shape_ind = actor_critic.actor_encoder.list_of_shape_inds[arch_index]
+    # shape_ind = shape_ind[:torch.where(shape_ind == -1.0)[0][0]]
 
     # _ = ghn([test_arch_model], return_embeddings=False, shape_ind = shape_ind.view(-1,1))
+    actor_critic.actor_encoder.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
+    test_arch_policy = actor_critic.actor_encoder.current_model[0]
 
     episode_rewards = [deque([], maxlen=100) for _ in range(env.num_agents)]
     true_objectives = [deque([], maxlen=100) for _ in range(env.num_agents)]
@@ -93,18 +101,30 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
             if not cfg.no_render:
                 visualize_policy_inputs(normalized_obs)
 
-            # policy_outputs = actor_critic(normalized_obs, rnn_states)
+            # policy_outputs = actor_critic(normalized_obs, rnn_states, sample_actions=True)
+            # x, std_dev = actor_critic.forward_head(normalized_obs)
+            # actions = actor_critic.actor_encoder(normalized_obs['obs'])[0]
+
+            actions = test_arch_policy(normalized_obs['obs'])
 
 
-            # # sample actions from the distribution by default
+            # x, new_rnn_states = actor_critic.forward_core(x, rnn_states)
+            # policy_outputs = actor_critic.forward_tail(x, False, sample_actions=True, std_dev=std_dev)
+
+            # actor_decoder_output = x[:,:4]
+            # action_distribution_params, _ = actor_critic.action_parameterization(actor_decoder_output, action_stddevs = std_dev)
+
+            # sample actions from the distribution by default
             # actions = policy_outputs["actions"]
+            # actions = policy_outputs["action_logits"][:,:4]
+            # actions = x
 
-            actions = test_arch_model(normalized_obs['obs'])
-            action_distribution_params, action_distribution = actor_critic.action_parameterization(actions.view(1,-1), action_stddevs = None)
+            # # actions = test_arch_model(normalized_obs['obs'])
+            # action_distribution_params, action_distribution = actor_critic.action_parameterization(actions.view(1,-1), action_stddevs = None)
 
-            if cfg.eval_deterministic:
-                # action_distribution = actor_critic.action_distribution()
-                actions = argmax_actions(action_distribution)[0]
+            # if cfg.eval_deterministic:
+            #     # action_distribution = actor_critic.action_distribution()
+            #     actions = argmax_actions(action_distribution)[0]
 
             # actions shape should be [num_agents, num_actions] even if it's [1, 1]
             if actions.ndim == 1:
@@ -131,9 +151,9 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
                 dones = dones.cpu().numpy()
                 for agent_i, done_flag in enumerate([dones]):
-                    if done_flag:
+                    if done_flag.all():
                         finished_episode[agent_i] = True
-                        rew = [episode_reward][agent_i].item()
+                        rew = [episode_reward][0][agent_i].item()
                         episode_rewards[agent_i].append(rew)
 
                         true_objective = rew
@@ -162,7 +182,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
                             reward_list.append(true_objective)
 
                 # if episode terminated synchronously for all agents, pause a bit before starting a new one
-                if all([dones]):
+                if all(dones):
                     render_frame(cfg, env, video_frames, num_episodes, last_render_start)
                     time.sleep(0.05)
 
@@ -236,15 +256,15 @@ class TorchWrapper(gym.Wrapper):
         # action = action.cpu().numpy()
         obs, reward, done, truncated, info = self.env.step(action)
         truncated = done
-        obs = torch.from_numpy(obs).float()
-        reward = torch.tensor(reward).float()
-        done = torch.tensor(done)
-        truncated = torch.tensor(truncated)
+        obs = torch.from_numpy(obs).float().view(1,-1)
+        reward = torch.tensor(reward).float().view(1,-1)
+        done = torch.tensor(done).view(1,-1)
+        truncated = torch.tensor(truncated).view(1,-1)
         return obs, reward, done, truncated, info
 
     def reset(self, **kwargs):
         obs, info = self.env.reset()
-        obs = torch.from_numpy(obs).float()
+        obs = torch.from_numpy(obs).float().view(1,-1)
         # obs_dict = {}
         # obs_dict['obs'] = obs
         # obs_dict['obs']['obs'] = obs
@@ -272,7 +292,7 @@ class SimpleWrapper(gym.Wrapper):
         return obs[0], info
 
     def step(self, action):
-        obs, reward, done, truncated, info = self.env.step(action[0])
+        obs, reward, done, truncated, info = self.env.step(action)
         return obs[0], reward[0], done[0], truncated[0], info[0]
     
 
@@ -285,7 +305,6 @@ def register_swarm_components(cfg):
     register_env("quadrotor_multi", make_single_quadrotor_env)
     if not cfg.hyper:
         register_models()
-
 
 def main():
     """Script entry point."""
