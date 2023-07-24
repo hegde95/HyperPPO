@@ -84,7 +84,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.adaptive_stddev=False
     cfg.policy_initialization="xavier_uniform"
     cfg.reward_scale=1
-    # cfg.max_grad_norm=1.0
+    cfg.max_grad_norm=3.0
     cfg.num_batches_per_epoch=1
     cfg.num_epochs=8
     cfg.ppo_clip_ratio=0.1
