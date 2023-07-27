@@ -33,6 +33,13 @@ def add_more_quadrotors_env_args(env, parser):
         help="Num. agents in a vectorized env",
     )
 
+    p.add_argument(
+        "--milestone_name",
+        default="",
+        type=str,
+        help="Name of the milestone to load",
+    )
+
 # baseline model
 class AppendedQuadMultiEncoder(QuadMultiEncoder):
     def __init__(self, cfg, obs_space):

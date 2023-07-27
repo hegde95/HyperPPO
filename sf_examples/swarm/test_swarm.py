@@ -6,7 +6,7 @@ from swarm_rl.env_wrappers.quad_utils import make_quadrotor_env
 from typing import Any
 from hyper.ghn_modules import MLP_GHN, MlpNetwork
 from stable_baselines3.common.vec_env import SubprocVecEnv
-
+import os
 
 
 
@@ -15,14 +15,14 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     verbose = True
 
     list_of_test_archs = [
-                    [16],                                   
+                    [4],                                   
                 ]
     cfg = load_from_checkpoint(cfg)
 
     eval_env_frameskip: int = cfg.env_frameskip if cfg.eval_env_frameskip is None else cfg.eval_env_frameskip
     assert (
         cfg.env_frameskip % eval_env_frameskip == 0
-    ), f"{cfg.env_frameskip=} must be divisible by {eval_env_frameskip=}"
+    ), f"{cfg.env_frameskip=} mmilestoneust be divisible by {eval_env_frameskip=}"
     render_action_repeat: int = cfg.env_frameskip // eval_env_frameskip
     cfg.env_frameskip = cfg.eval_env_frameskip = eval_env_frameskip
     log.debug(f"Using frameskip {cfg.env_frameskip} and {render_action_repeat=} for evaluation")
@@ -58,7 +58,17 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     policy_id = cfg.policy_index
     name_prefix = dict(latest="checkpoint", best="best")[cfg.load_checkpoint_kind]
     checkpoints = Learner.get_checkpoints(Learner.checkpoint_dir(cfg, policy_id), f"{name_prefix}_*")
-    checkpoint_dict = Learner.load_checkpoint(checkpoints, device)
+
+
+    if cfg.milestone_name is None:
+        milestone_to_load = checkpoint_dict["model"]
+        checkpoint_dict = Learner.load_checkpoint(checkpoints, device)
+    else:
+        milestone_dir = os.path.join(cfg.train_dir, cfg.experiment, "checkpoint_p0", "milestones")
+        milestones = Learner.get_checkpoints(milestone_dir, "checkpoint_*")
+        milestone_to_load = [milestone for milestone in milestones if cfg.milestone_name in milestone][0]
+        checkpoint_dict = Learner.load_checkpoint([milestone_to_load], device)
+
     actor_critic.load_state_dict(checkpoint_dict["model"])
     ghn = actor_critic.actor_encoder.ghn
     ghn.eval()    
@@ -93,6 +103,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
     video_frames = []
     num_episodes = 0
+    total_rewraw_spin = 0
 
     with torch.no_grad():
         while not max_frames_reached(num_frames):
@@ -137,6 +148,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
                 last_render_start = render_frame(cfg, env, video_frames, num_episodes, last_render_start)
 
                 obs, rew, terminated, truncated, infos = env.step(actions)
+                total_rewraw_spin += infos['rewards']['rewraw_spin']
                 dones = make_dones(terminated, truncated)
                 infos = [{} for _ in range(env_info.num_agents)] if infos is None else infos
 
@@ -210,6 +222,8 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
                         np.mean([np.mean(episode_rewards[i]) for i in range(env.num_agents)]),
                         np.mean([np.mean(true_objectives[i]) for i in range(env.num_agents)]),
                     )
+                    log.info("Spin reward: %.3f", total_rewraw_spin)
+                    total_rewraw_spin = 0
 
                 # VizDoom multiplayer stuff
                 # for player in [1, 2, 3, 4, 5, 6, 7, 8]:
