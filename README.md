@@ -39,6 +39,19 @@ Add the following line to .bashrc to avoid running into GPU memory issues:
 echo "export XLA_PYTHON_CLIENT_PREALLOCATE=false" >> ~/.bashrc
 ```
 
+To install stable-baselines3 and drone env:
+```
+git clone git@github.com:DLR-RM/stable-baselines3.git
+cd stable-baselines3
+pip install -e .
+```
+    
+```
+git clone git@github.com:Zhehui-Huang/quad-swarm-rl.git
+cd quad-swarm-rl
+pip install -e .
+```
+
 Remember to init wandb
 
 Run:
