@@ -91,7 +91,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.adaptive_stddev=False
     cfg.policy_initialization="xavier_uniform"
     cfg.reward_scale=1
-    # cfg.max_grad_norm=1.0
+    cfg.max_grad_norm=3.0
     cfg.num_batches_per_epoch=1
     cfg.num_epochs=8
     cfg.ppo_clip_ratio=0.1
@@ -110,8 +110,8 @@ def override_params_for_batched_sampling(cfg):
     cfg.gae_lambda=1.0
     cfg.with_vtrace=False
     cfg.value_bootstrap=False
-    cfg.normalize_input=True
-    cfg.normalize_returns=True
+    cfg.normalize_input=False
+    cfg.normalize_returns=False
     # save_best_after=int(5e6)
 
 class TorchWrapper(gym.Wrapper):
