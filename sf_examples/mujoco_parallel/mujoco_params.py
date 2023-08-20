@@ -35,6 +35,7 @@ def mujoco_override_defaults(env, parser):
         save_every_sec=15,
         serial_mode=True,
         async_rl=False,
+        meta_batch_size=8,
     )
 
 
@@ -43,7 +44,7 @@ def add_mujoco_env_args(env, parser):
     p = parser
     p.add_argument(
         "--env_agents",
-        default=256,
+        default=16,
         type=int,
         help="Num. agents in a vectorized env",
     )
