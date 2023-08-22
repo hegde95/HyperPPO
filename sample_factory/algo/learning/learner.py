@@ -292,6 +292,12 @@ class Learner(Configurable):
                 self.test_results_df['arch'] = [self.list_of_test_archs[i] for i in self.list_of_test_arch_indices]
                 self.test_results_df['num_params'] = [self.actor_critic.actor_encoder.get_params(self.list_of_test_archs[i]) for i in self.list_of_test_arch_indices]
 
+                # check if dataframe folder exists
+                self.df_folder = os.path.join(self.cfg.train_dir, self.cfg.experiment, 'dataframes')
+
+                if not os.path.exists(self.df_folder):
+                    os.makedirs(self.df_folder)
+
 
 
         return model_initialization_data(self.cfg, self.policy_id, self.actor_critic, self.train_step, self.device)
@@ -1235,14 +1241,18 @@ class Learner(Configurable):
         if self.cfg.hyper:
             self.test_results_df['reward'] = episode_rewards
 
+            # save the results
+            datafram_name = f"dataframe_{self.train_step:09d}_{self.env_steps}.csv"
+            self.test_results_df.to_csv(os.path.join(self.df_folder, datafram_name), index=False)
+
             max_reward = self.test_results_df['reward'].max()
             max_reward_num_params = self.test_results_df['num_params'][self.test_results_df['reward'] == max_reward].values[0]
 
-            ninety_percent_reward = 0.9 * max_reward
-            eighty_percent_reward = 0.8 * max_reward
-            seventy_percent_reward = 0.7 * max_reward
-            sixty_percent_reward = 0.6 * max_reward
-            fifty_percent_reward = 0.5 * max_reward
+            ninety_percent_reward = np.percentile(self.test_results_df['reward'], 90)
+            eighty_percent_reward = np.percentile(self.test_results_df['reward'], 80)
+            seventy_percent_reward = np.percentile(self.test_results_df['reward'], 70)
+            sixty_percent_reward = np.percentile(self.test_results_df['reward'], 60)
+            fifty_percent_reward = np.percentile(self.test_results_df['reward'], 50)
 
             ninety_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= ninety_percent_reward]['num_params'].min()
             ninety_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= ninety_percent_reward) & (self.test_results_df['num_params'] == ninety_percent_reward_num_params)]
