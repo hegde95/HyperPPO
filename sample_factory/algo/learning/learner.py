@@ -262,7 +262,7 @@ class Learner(Configurable):
             import copy
 
             self.eval_cfg = copy.deepcopy(self.cfg)
-            self.eval_cfg.env_agents = 8*8
+            self.eval_cfg.env_agents = 16*3
             self.eval_cfg.num_envs = 1
 
             self.eval_env = make_env_func_batched(

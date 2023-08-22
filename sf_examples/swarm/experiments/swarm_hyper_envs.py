@@ -9,14 +9,14 @@ _params = ParamGrid(
         ("multi_stddev", [False]),
         ("dual_critic", [False]),
         ("arch_sampling_mode", ["biased"]),
-        ("eval_every_steps", [20]),
+        # ("eval_every_steps", [20]),
 
     ]
 )
 
 vstr = f"hyper"
 
-cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm1 --hyper True --wandb_user khegde --wandb_group drones_actual --train_for_env_steps 1_000_000_000 --meta_batch_size 16 --continuous_tanh_scale 5"
+cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm_neweval --hyper True --wandb_user khegde --wandb_group drones_actual_neweval --train_for_env_steps 1_000_000_000 --meta_batch_size 16 --continuous_tanh_scale 5"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)

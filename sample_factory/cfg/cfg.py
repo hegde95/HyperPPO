@@ -38,7 +38,7 @@ def add_hyper_args(p: ArgumentParser):
     )
     p.add_argument(
         "--eval_every_steps",
-        default=20,
+        default=2000,
         type=int,
         help="How often to evaluate the policy, 0 will disable evaluation",
     )    
@@ -470,13 +470,13 @@ def add_rl_args(p: ArgumentParser):
 
     p.add_argument(
         "--heartbeat_interval",
-        default=420,
+        default=6000,
         type=int,
         help="How often in seconds components send a heartbeat signal to the runner to verify they are not stuck",
     )
     p.add_argument(
         "--heartbeat_reporting_interval",
-        default=420,
+        default=6000,
         type=int,
         help="How often in seconds the runner checks for heartbeats",
     )

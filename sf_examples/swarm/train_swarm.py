@@ -85,7 +85,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.batch_size = 6144
     cfg.meta_batch_size = 16
     cfg.wandb_project = "hyperppo"
-    cfg.save_milestones_sec = 28800    
+    cfg.save_milestones_sec = 3600    
 
     cfg.use_rnn=False
     cfg.adaptive_stddev=False

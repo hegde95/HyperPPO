@@ -165,7 +165,7 @@ def override_default_params_func(env, parser):
         num_envs_per_worker=1,
         worker_num_splits=1,
         actor_worker_gpus=[0],  # obviously need a GPU
-        train_for_env_steps=2_000_000_000,
+        train_for_env_steps=1_000_000_000,
         use_rnn=False,
         adaptive_stddev=False,
         policy_initialization="torch_default",
