@@ -5,7 +5,7 @@ from sample_factory.utils.algo_version import ALGO_VERSION
 _params = ParamGrid(
     [
         ("seed", seeds(8)),
-        ("env", ["ant", "humanoid", "halfcheetah", "walker2d"]),  #["ant", "humanoid", "halfcheetah", "walker2d"]
+        ("env", ["humanoid"]),  #["ant", "humanoid", "halfcheetah", "walker2d"]
         ("dual_critic", [False]),
         ("multi_stddev", [True, False]),
         ("arch_sampling_mode", ["biased", "uniform"]),
