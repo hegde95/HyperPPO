@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from torch.nn import Module
+import pandas as pd
 
 from sample_factory.algo.learning.rnn_utils import build_core_out_from_seq, build_rnn_inputs
 from sample_factory.algo.sampling.batched_sampling import preprocess_actions
@@ -270,18 +271,28 @@ class Learner(Configurable):
             self.env_info = extract_env_info(self.eval_env, self.eval_cfg)
             
             if self.cfg.hyper:
-                self.list_of_test_archs = [
-                    [4, 4],
-                    [16],
-                    [16, 16, 16],
-                    [32, 32, 32],
-                    [64, 64, 64, 64],
-                    [128, 128, 128, 128],
-                    [256, 256, 256],
-                    [256, 256, 256, 256],
-                ]
-                self.list_of_test_arch_indices = [[i for i,arc in enumerate(self.actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in self.list_of_test_archs]
+                # self.list_of_test_archs = [
+                #     [4, 4],
+                #     [16],
+                #     [16, 16, 16],
+                #     [32, 32, 32],
+                #     [64, 64, 64, 64],
+                #     [128, 128, 128, 128],
+                #     [256, 256, 256],
+                #     [256, 256, 256, 256],
+                # ]
+                # self.list_of_test_arch_indices = [[i for i,arc in enumerate(self.actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in self.list_of_test_archs]
+                # self.list_of_test_shape_inds = torch.stack([self.actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(self.list_of_test_arch_indices)])
+
+                self.list_of_test_archs = self.actor_critic.actor_encoder.list_of_arcs
+                self.list_of_test_arch_indices = self.actor_critic.actor_encoder.list_of_arc_indices
+                # self.list_of_test_shape_inds = self.actor_critic.actor_encoder.list_of_shape_inds
                 self.list_of_test_shape_inds = torch.stack([self.actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(self.list_of_test_arch_indices)])
+                self.test_results_df = pd.DataFrame(columns=['arch', 'num_params','reward'])
+                self.test_results_df['arch'] = [self.list_of_test_archs[i] for i in self.list_of_test_arch_indices]
+                self.test_results_df['num_params'] = [self.actor_critic.actor_encoder.get_params(self.list_of_test_archs[i]) for i in self.list_of_test_arch_indices]
+
+
 
         return model_initialization_data(self.cfg, self.policy_id, self.actor_critic, self.train_step, self.device)
 
@@ -1158,11 +1169,8 @@ class Learner(Configurable):
 
             return stats
     
-    
-    def eval(self, stats: Dict) -> Dict:
-        if self.cfg.hyper:
-            self.actor_critic.actor_encoder.set_graph(self.list_of_test_arch_indices, self.list_of_test_shape_inds)
 
+    def eval_for_given_arch(self,):
         episode_rewards = np.zeros((self.eval_env.num_agents))
         obs, infos = self.eval_env.reset()
         rnn_states = torch.zeros([self.eval_env.num_agents, get_rnn_size(self.cfg)], dtype=torch.float32, device=self.device)
@@ -1207,17 +1215,82 @@ class Learner(Configurable):
                         episode_reward[agent_i] = 0
 
                         # reward_list.append(true_objective)
+        return episode_rewards, finished_episode
+    
+    
+    def eval(self, stats: Dict) -> Dict:
+        num = 175
+        archs_per_num = len(self.list_of_test_arch_indices) // num  
+        episode_rewards = np.zeros((len(self.list_of_test_arch_indices)))
+        if self.cfg.hyper:
+            for k in range(num):
+                self.actor_critic.actor_encoder.set_graph(self.list_of_test_arch_indices[k*archs_per_num:(k+1)*archs_per_num], self.list_of_test_shape_inds[k*archs_per_num:(k+1)*archs_per_num])
+                episode_rewards_per_num, finished_episode_per_num = self.eval_for_given_arch()
+                episode_rewards[k*archs_per_num:(k+1)*archs_per_num] = episode_rewards_per_num.reshape(archs_per_num, self.eval_env.num_agents//archs_per_num).mean(1)
 
+        else:
+            episode_rewards, finished_episode = self.eval_for_given_arch()
 
-            if all(finished_episode):
-                if self.cfg.hyper:
-                    average_reward_per_arch = episode_rewards.reshape(8,8).mean(1)
-                    for i in range(len(self.list_of_test_arch_indices)):
-                        stats[TEST_STATS][f"{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
-                    stats[TEST_STATS][f"all_average"] = average_reward_per_arch.mean()
-                else:
-                    stats[TEST_STATS][f"baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
-                    stats[TEST_STATS][f"all_average"] = episode_rewards.mean()
+        # if all(finished_episode):
+        if self.cfg.hyper:
+            self.test_results_df['reward'] = episode_rewards
+
+            max_reward = self.test_results_df['reward'].max()
+            max_reward_num_params = self.test_results_df['num_params'][self.test_results_df['reward'] == max_reward].values[0]
+
+            ninety_percent_reward = 0.9 * max_reward
+            eighty_percent_reward = 0.8 * max_reward
+            seventy_percent_reward = 0.7 * max_reward
+            sixty_percent_reward = 0.6 * max_reward
+            fifty_percent_reward = 0.5 * max_reward
+
+            ninety_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= ninety_percent_reward]['num_params'].min()
+            ninety_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= ninety_percent_reward) & (self.test_results_df['num_params'] == ninety_percent_reward_num_params)]
+            ninety_percent_reward_row = ninety_percent_reward_row[ninety_percent_reward_row['reward'] == ninety_percent_reward_row['reward'].max()]
+            true_ninety_percent_reward = ninety_percent_reward_row['reward'].values[0]
+
+            eighty_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= eighty_percent_reward]['num_params'].min()
+            eighty_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= eighty_percent_reward) & (self.test_results_df['num_params'] == eighty_percent_reward_num_params)]
+            eighty_percent_reward_row = eighty_percent_reward_row[eighty_percent_reward_row['reward'] == eighty_percent_reward_row['reward'].max()]
+            true_eighty_percent_reward = eighty_percent_reward_row['reward'].values[0]
+
+            seventy_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= seventy_percent_reward]['num_params'].min()
+            seventy_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= seventy_percent_reward) & (self.test_results_df['num_params'] == seventy_percent_reward_num_params)]
+            seventy_percent_reward_row = seventy_percent_reward_row[seventy_percent_reward_row['reward'] == seventy_percent_reward_row['reward'].max()]
+            true_seventy_percent_reward = seventy_percent_reward_row['reward'].values[0]
+
+            sixty_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= sixty_percent_reward]['num_params'].min()
+            sixty_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= sixty_percent_reward) & (self.test_results_df['num_params'] == sixty_percent_reward_num_params)]
+            sixty_percent_reward_row = sixty_percent_reward_row[sixty_percent_reward_row['reward'] == sixty_percent_reward_row['reward'].max()]
+            true_sixty_percent_reward = sixty_percent_reward_row['reward'].values[0]
+
+            fifty_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= fifty_percent_reward]['num_params'].min()
+            fifty_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= fifty_percent_reward) & (self.test_results_df['num_params'] == fifty_percent_reward_num_params)]
+            fifty_percent_reward_row = fifty_percent_reward_row[fifty_percent_reward_row['reward'] == fifty_percent_reward_row['reward'].max()]
+            true_fifty_percent_reward = fifty_percent_reward_row['reward'].values[0]
+                        
+
+            stats[TEST_STATS][f"max_reward"] = max_reward
+            stats[TEST_STATS][f"max_reward_num_params"] = max_reward_num_params
+            stats[TEST_STATS][f"90_percent_reward"] = true_ninety_percent_reward
+            stats[TEST_STATS][f"90_percent_reward_num_params"] = ninety_percent_reward_num_params
+            stats[TEST_STATS][f"80_percent_reward"] = true_eighty_percent_reward
+            stats[TEST_STATS][f"80_percent_reward_num_params"] = eighty_percent_reward_num_params
+            stats[TEST_STATS][f"70_percent_reward"] = true_seventy_percent_reward
+            stats[TEST_STATS][f"70_percent_reward_num_params"] = seventy_percent_reward_num_params
+            stats[TEST_STATS][f"60_percent_reward"] = true_sixty_percent_reward
+            stats[TEST_STATS][f"60_percent_reward_num_params"] = sixty_percent_reward_num_params
+            stats[TEST_STATS][f"50_percent_reward"] = true_fifty_percent_reward
+            stats[TEST_STATS][f"50_percent_reward_num_params"] = fifty_percent_reward_num_params
+
+            # average_reward_per_arch = episode_rewards
+            # for i in range(len(self.list_of_test_arch_indices)):
+            #     stats[TEST_STATS][f"{str(self.list_of_test_archs[i])}"] = average_reward_per_arch[i]
+            stats[TEST_STATS][f"all_average"] = episode_rewards.mean()
+
+        else:
+            stats[TEST_STATS][f"baseline_{self.cfg.encoder_mlp_layers}"] = episode_rewards.mean()
+            stats[TEST_STATS][f"all_average"] = episode_rewards.mean()
             
 
 
