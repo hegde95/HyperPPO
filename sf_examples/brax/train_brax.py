@@ -77,10 +77,10 @@ class BraxEnv(gym.Env):
             self.action_space = convert_space(self.env.action_space)
 
     def reset(self, *args, **kwargs) -> Tuple[Tensor, Dict]:
-        log.debug(f"Resetting env {self.env} with {self.num_agents} parallel agents...")
+        # log.debug(f"Resetting env {self.env} with {self.num_agents} parallel agents...")
         obs = self.env.reset()
         obs = jax_to_torch(obs)
-        log.debug(f"reset() done, obs.shape={obs.shape}!")
+        # log.debug(f"reset() done, obs.shape={obs.shape}!")
         return obs, {}
 
     def step(self, action):
