@@ -1248,11 +1248,16 @@ class Learner(Configurable):
             max_reward = self.test_results_df['reward'].max()
             max_reward_num_params = self.test_results_df['num_params'][self.test_results_df['reward'] == max_reward].values[0]
 
-            ninety_percent_reward = np.percentile(self.test_results_df['reward'], 90)
-            eighty_percent_reward = np.percentile(self.test_results_df['reward'], 80)
-            seventy_percent_reward = np.percentile(self.test_results_df['reward'], 70)
-            sixty_percent_reward = np.percentile(self.test_results_df['reward'], 60)
-            fifty_percent_reward = np.percentile(self.test_results_df['reward'], 50)
+            # ninety_percent_reward = np.percentile(self.test_results_df['reward'], 90)
+            # eighty_percent_reward = np.percentile(self.test_results_df['reward'], 80)
+            # seventy_percent_reward = np.percentile(self.test_results_df['reward'], 70)
+            # sixty_percent_reward = np.percentile(self.test_results_df['reward'], 60)
+            # fifty_percent_reward = np.percentile(self.test_results_df['reward'], 50)
+            ninety_percent_reward = 0.9 * max_reward
+            eighty_percent_reward = 0.8 * max_reward
+            seventy_percent_reward = 0.7 * max_reward
+            sixty_percent_reward = 0.6 * max_reward
+            fifty_percent_reward = 0.5 * max_reward
 
             ninety_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= ninety_percent_reward]['num_params'].min()
             ninety_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= ninety_percent_reward) & (self.test_results_df['num_params'] == ninety_percent_reward_num_params)]
