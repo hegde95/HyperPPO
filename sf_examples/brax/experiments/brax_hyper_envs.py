@@ -15,7 +15,7 @@ _params = ParamGrid(
 
 vstr = f"hyper"
 
-cli = "python -m sf_examples.brax.train_brax --with_wandb=True --wandb_tag paper_bench_neweval --hyper True --wandb_user khegde --wandb_group paper_bench_neweval"
+cli = "python -m sf_examples.brax.train_brax --with_wandb=True --wandb_tag paper_bench_neweval --hyper True --wandb_user khegde --wandb_group paper_bench_neweval --eval_every_steps 200"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)
