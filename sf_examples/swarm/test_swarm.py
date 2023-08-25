@@ -61,8 +61,8 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
 
     if cfg.milestone_name is None:
-        milestone_to_load = checkpoint_dict["model"]
         checkpoint_dict = Learner.load_checkpoint(checkpoints, device)
+        milestone_to_load = checkpoint_dict["model"]
     else:
         milestone_dir = os.path.join(cfg.train_dir, cfg.experiment, "checkpoint_p0", "milestones")
         milestones = Learner.get_checkpoints(milestone_dir, "checkpoint_*")

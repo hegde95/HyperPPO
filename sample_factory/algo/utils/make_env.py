@@ -188,7 +188,10 @@ class BatchedVecEnv(Wrapper):
                 # so we first create a numpy array which is then converted to a tensor
                 return lambda x_: torch.tensor(np.array(x_))
             elif isinstance(x[0], Tensor):
-                return lambda x_: torch.tensor(x_)
+                if len(x) == 1 and type(x) is list:
+                    return lambda x_: torch.tensor(x_[0]) #THIS MAY BE PROBLEMATIC
+                else:    
+                    return lambda x_: torch.tensor(x_)
             else:
                 # just make a tensor and hope for the best
                 # leave it like this for now, we can add more cases later if we need to
