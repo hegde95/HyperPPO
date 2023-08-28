@@ -20,7 +20,7 @@ def mujoco_override_defaults(env, parser):
         num_workers=1,
         num_envs_per_worker=1,
         worker_num_splits=1,
-        train_for_env_steps=10000000,
+        train_for_env_steps=100_000_000,
         encoder_mlp_layers=env_configs[env]["encoder_mlp_layers"],
         env_frameskip=1,
         nonlinearity="tanh",
@@ -32,8 +32,8 @@ def mujoco_override_defaults(env, parser):
         reward_scale=1,
         rollout=64,
         max_grad_norm=3.5,
-        num_epochs=2,
-        num_batches_per_epoch=8,
+        num_epochs=8,
+        num_batches_per_epoch=4,
         ppo_clip_ratio=0.2,
         value_loss_coeff=1.3,
         exploration_loss_coeff=0.0,
@@ -53,6 +53,7 @@ def mujoco_override_defaults(env, parser):
         async_rl=False,
         meta_batch_size=8,
         wandb_project = "hyperppo",
+        save_milestones_sec = 3600,
 
     )
 
