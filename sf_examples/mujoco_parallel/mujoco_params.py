@@ -52,6 +52,8 @@ def mujoco_override_defaults(env, parser):
         serial_mode=True,
         async_rl=False,
         meta_batch_size=8,
+        wandb_project = "hyperppo",
+
     )
 
 
