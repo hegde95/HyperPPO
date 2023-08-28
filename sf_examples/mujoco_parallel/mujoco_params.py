@@ -1,11 +1,27 @@
 def mujoco_override_defaults(env, parser):
+    env_configs = dict(
+        mujoco_ant=dict(
+            encoder_mlp_layers=[256, 256, 256, 8],
+            save_every_sec=15,
+        ),
+        mujoco_humanoid=dict(
+            encoder_mlp_layers=[256, 256, 256, 17],
+        ),
+        mujoco_halfcheetah=dict(
+            encoder_mlp_layers=[256, 256, 256, 6],
+        ),
+        mujoco_walker2d=dict(
+            encoder_mlp_layers=[256, 256, 256, 6],
+        ),
+    )
+
     parser.set_defaults(
         batched_sampling=True,
         num_workers=1,
         num_envs_per_worker=1,
         worker_num_splits=1,
         train_for_env_steps=10000000,
-        encoder_mlp_layers=[256, 256, 256, 17],
+        encoder_mlp_layers=env_configs[env]["encoder_mlp_layers"],
         env_frameskip=1,
         nonlinearity="tanh",
         batch_size=65536,
