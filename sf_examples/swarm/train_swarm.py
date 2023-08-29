@@ -112,7 +112,11 @@ def override_params_for_batched_sampling(cfg):
     cfg.value_bootstrap=False
     cfg.normalize_input=False
     cfg.normalize_returns=False
+    cfg.static_same_goal="mix"
     # save_best_after=int(5e6)
+
+    cfg.heartbeat_interval = 3600000
+    cfg.heartbeat_reporting_interval = 3600000
 
 class TorchWrapper(gym.Wrapper):
     def __init__(self, env, num_agents):

@@ -1245,8 +1245,11 @@ class Learner(Configurable):
             datafram_name = f"dataframe_{self.train_step:09d}_{self.env_steps}.csv"
             self.test_results_df.to_csv(os.path.join(self.df_folder, datafram_name), index=False)
 
-            max_reward = self.test_results_df['reward'].max()
-            max_reward_num_params = self.test_results_df['num_params'][self.test_results_df['reward'] == max_reward].values[0]
+            self.test_results_df['normalized_reward'] = (self.test_results_df['reward'] - self.test_results_df['reward'].min()) / (self.test_results_df['reward'].max() - self.test_results_df['reward'].min())
+
+            max_reward = self.test_results_df['normalized_reward'].max()
+            max_reward_num_params = self.test_results_df['num_params'][self.test_results_df['normalized_reward'] == max_reward].values[0]
+            true_max_reward = self.test_results_df['reward'][self.test_results_df['normalized_reward'] == max_reward].values[0]
 
             # ninety_percent_reward = np.percentile(self.test_results_df['reward'], 90)
             # eighty_percent_reward = np.percentile(self.test_results_df['reward'], 80)
@@ -1259,29 +1262,29 @@ class Learner(Configurable):
             sixty_percent_reward = 0.6 * max_reward
             fifty_percent_reward = 0.5 * max_reward
 
-            ninety_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= ninety_percent_reward]['num_params'].min()
-            ninety_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= ninety_percent_reward) & (self.test_results_df['num_params'] == ninety_percent_reward_num_params)]
-            ninety_percent_reward_row = ninety_percent_reward_row[ninety_percent_reward_row['reward'] == ninety_percent_reward_row['reward'].max()]
+            ninety_percent_reward_num_params = self.test_results_df[self.test_results_df['normalized_reward'] >= ninety_percent_reward]['num_params'].min()
+            ninety_percent_reward_row = self.test_results_df[(self.test_results_df['normalized_reward'] >= ninety_percent_reward) & (self.test_results_df['num_params'] == ninety_percent_reward_num_params)]
+            ninety_percent_reward_row = ninety_percent_reward_row[ninety_percent_reward_row['normalized_reward'] == ninety_percent_reward_row['normalized_reward'].max()]
             true_ninety_percent_reward = ninety_percent_reward_row['reward'].values[0]
 
-            eighty_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= eighty_percent_reward]['num_params'].min()
-            eighty_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= eighty_percent_reward) & (self.test_results_df['num_params'] == eighty_percent_reward_num_params)]
-            eighty_percent_reward_row = eighty_percent_reward_row[eighty_percent_reward_row['reward'] == eighty_percent_reward_row['reward'].max()]
+            eighty_percent_reward_num_params = self.test_results_df[self.test_results_df['normalized_reward'] >= eighty_percent_reward]['num_params'].min()
+            eighty_percent_reward_row = self.test_results_df[(self.test_results_df['normalized_reward'] >= eighty_percent_reward) & (self.test_results_df['num_params'] == eighty_percent_reward_num_params)]
+            eighty_percent_reward_row = eighty_percent_reward_row[eighty_percent_reward_row['normalized_reward'] == eighty_percent_reward_row['normalized_reward'].max()]
             true_eighty_percent_reward = eighty_percent_reward_row['reward'].values[0]
 
-            seventy_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= seventy_percent_reward]['num_params'].min()
-            seventy_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= seventy_percent_reward) & (self.test_results_df['num_params'] == seventy_percent_reward_num_params)]
-            seventy_percent_reward_row = seventy_percent_reward_row[seventy_percent_reward_row['reward'] == seventy_percent_reward_row['reward'].max()]
+            seventy_percent_reward_num_params = self.test_results_df[self.test_results_df['normalized_reward'] >= seventy_percent_reward]['num_params'].min()
+            seventy_percent_reward_row = self.test_results_df[(self.test_results_df['normalized_reward'] >= seventy_percent_reward) & (self.test_results_df['num_params'] == seventy_percent_reward_num_params)]
+            seventy_percent_reward_row = seventy_percent_reward_row[seventy_percent_reward_row['normalized_reward'] == seventy_percent_reward_row['normalized_reward'].max()]
             true_seventy_percent_reward = seventy_percent_reward_row['reward'].values[0]
 
-            sixty_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= sixty_percent_reward]['num_params'].min()
-            sixty_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= sixty_percent_reward) & (self.test_results_df['num_params'] == sixty_percent_reward_num_params)]
-            sixty_percent_reward_row = sixty_percent_reward_row[sixty_percent_reward_row['reward'] == sixty_percent_reward_row['reward'].max()]
+            sixty_percent_reward_num_params = self.test_results_df[self.test_results_df['normalized_reward'] >= sixty_percent_reward]['num_params'].min()
+            sixty_percent_reward_row = self.test_results_df[(self.test_results_df['normalized_reward'] >= sixty_percent_reward) & (self.test_results_df['num_params'] == sixty_percent_reward_num_params)]
+            sixty_percent_reward_row = sixty_percent_reward_row[sixty_percent_reward_row['normalized_reward'] == sixty_percent_reward_row['normalized_reward'].max()]
             true_sixty_percent_reward = sixty_percent_reward_row['reward'].values[0]
 
-            fifty_percent_reward_num_params = self.test_results_df[self.test_results_df['reward'] >= fifty_percent_reward]['num_params'].min()
-            fifty_percent_reward_row = self.test_results_df[(self.test_results_df['reward'] >= fifty_percent_reward) & (self.test_results_df['num_params'] == fifty_percent_reward_num_params)]
-            fifty_percent_reward_row = fifty_percent_reward_row[fifty_percent_reward_row['reward'] == fifty_percent_reward_row['reward'].max()]
+            fifty_percent_reward_num_params = self.test_results_df[self.test_results_df['normalized_reward'] >= fifty_percent_reward]['num_params'].min()
+            fifty_percent_reward_row = self.test_results_df[(self.test_results_df['normalized_reward'] >= fifty_percent_reward) & (self.test_results_df['num_params'] == fifty_percent_reward_num_params)]
+            fifty_percent_reward_row = fifty_percent_reward_row[fifty_percent_reward_row['normalized_reward'] == fifty_percent_reward_row['normalized_reward'].max()]
             true_fifty_percent_reward = fifty_percent_reward_row['reward'].values[0]
                         
 
