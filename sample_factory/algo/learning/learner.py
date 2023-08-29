@@ -1286,9 +1286,9 @@ class Learner(Configurable):
             fifty_percent_reward_row = self.test_results_df[(self.test_results_df['normalized_reward'] >= fifty_percent_reward) & (self.test_results_df['num_params'] == fifty_percent_reward_num_params)]
             fifty_percent_reward_row = fifty_percent_reward_row[fifty_percent_reward_row['normalized_reward'] == fifty_percent_reward_row['normalized_reward'].max()]
             true_fifty_percent_reward = fifty_percent_reward_row['reward'].values[0]
-                        
 
-            stats[TEST_STATS][f"max_reward"] = max_reward
+
+            stats[TEST_STATS][f"max_reward"] = true_max_reward
             stats[TEST_STATS][f"max_reward_num_params"] = max_reward_num_params
             stats[TEST_STATS][f"90_percent_reward"] = true_ninety_percent_reward
             stats[TEST_STATS][f"90_percent_reward_num_params"] = ninety_percent_reward_num_params
