@@ -112,7 +112,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.value_bootstrap=False
     cfg.normalize_input=False
     cfg.normalize_returns=False
-    cfg.static_same_goal="mix"
+    cfg.quads_mode="mix"
     # save_best_after=int(5e6)
 
     cfg.heartbeat_interval = 3600000
