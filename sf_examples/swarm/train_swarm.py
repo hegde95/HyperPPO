@@ -28,7 +28,7 @@ def add_more_quadrotors_env_args(env, parser):
     p = parser
     p.add_argument(
         "--env_agents",
-        default=48,
+        default=128,
         type=int,
         help="Num. agents in a vectorized env",
     )
@@ -82,7 +82,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.worker_num_splits = 1
 
     cfg.encoder_mlp_layers = [512, 512, 4]
-    cfg.batch_size = 6144
+    cfg.batch_size = 16384
     cfg.meta_batch_size = 16
     cfg.wandb_project = "hyperppo"
     cfg.save_milestones_sec = 3600    
@@ -117,6 +117,7 @@ def override_params_for_batched_sampling(cfg):
 
     cfg.heartbeat_interval = 3600000
     cfg.heartbeat_reporting_interval = 3600000
+    cfg.eval_every_steps = 4000
 
 class TorchWrapper(gym.Wrapper):
     def __init__(self, env, num_agents):
