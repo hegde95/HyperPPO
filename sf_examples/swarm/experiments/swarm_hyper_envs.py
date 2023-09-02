@@ -6,7 +6,7 @@ _params = ParamGrid(
     [
         ("seed", seeds(4)),
         ("env", ["quadrotor_multi"]),
-        ("multi_stddev", [False]),
+        ("multi_stddev", [True]),
         ("dual_critic", [False]),
         ("arch_sampling_mode", ["biased"]),
         # ("eval_every_steps", [20]),
@@ -14,7 +14,7 @@ _params = ParamGrid(
     ]
 )
 
-vstr = f"hyper"
+vstr = f"swarm"
 
 cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm_neweval --hyper True --wandb_user khegde --wandb_group drones_actual_neweval --train_for_env_steps 1_000_000_000 --meta_batch_size 16 --continuous_tanh_scale 5"
 
