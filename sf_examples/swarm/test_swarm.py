@@ -15,9 +15,13 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     verbose = True
 
     list_of_test_archs = [
-                    [4],                                   
+                    [32, 32],                                   
                 ]
     cfg = load_from_checkpoint(cfg)
+
+    cfg.quads_view_mode = "local"
+    # cfg.quads_view_mode = ["topdown", "chase", "global"]
+
 
     eval_env_frameskip: int = cfg.env_frameskip if cfg.eval_env_frameskip is None else cfg.eval_env_frameskip
     assert (
@@ -30,7 +34,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     cfg.num_envs = 1
     cfg.env_agents = 1
     cfg.quads_render = True
-    cfg.max_num_episodes = 4
+    cfg.max_num_episodes = 40
     cfg.eval_deterministic = True
 
     render_mode = "human"
