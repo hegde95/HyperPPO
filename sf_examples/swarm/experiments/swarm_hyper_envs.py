@@ -6,7 +6,7 @@ _params = ParamGrid(
     [
         ("seed", seeds(4)),
         ("env", ["quadrotor_multi"]),
-        ("multi_stddev", [True]),
+        ("multi_stddev", [False]),
         ("dual_critic", [False]),
         ("arch_sampling_mode", ["biased"]),
         # ("eval_every_steps", [20]),
