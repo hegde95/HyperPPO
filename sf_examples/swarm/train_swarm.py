@@ -82,7 +82,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.worker_num_splits = 1
 
     cfg.encoder_mlp_layers = [512, 512, 4]
-    cfg.batch_size = 2048
+    cfg.batch_size = 16384
     cfg.meta_batch_size = 16
     cfg.wandb_project = "hyperppo"
     cfg.save_milestones_sec = 3600    
