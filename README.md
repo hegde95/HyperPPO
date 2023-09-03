@@ -50,6 +50,7 @@ pip install -e .
 git clone git@github.com:Zhehui-Huang/quad-swarm-rl.git
 cd quad-swarm-rl
 pip install -e .
+BEZIER_NO_EXTENSION=true python -m pip install bezier==2020.5.19
 ```
 
 Remember to init wandb
