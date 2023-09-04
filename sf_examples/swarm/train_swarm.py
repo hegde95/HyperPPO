@@ -116,6 +116,7 @@ def override_params_for_batched_sampling(cfg):
     # save_best_after=int(5e6)
     cfg.rollout = 128
     cfg.kl_loss_coeff=0.1,
+    cfg.exploration_loss = 0.0
 
     cfg.heartbeat_interval = 3600000
     cfg.heartbeat_reporting_interval = 3600000
