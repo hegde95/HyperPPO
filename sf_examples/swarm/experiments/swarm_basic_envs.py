@@ -9,7 +9,7 @@ _params = ParamGrid(
         ("multi_stddev", [False]),
         ("dual_critic", [False]),
         ("arch_sampling_mode", ["biased"]),
-        # ("eval_every_steps", [20]),
+        ("eval_every_steps", [0]),
 
     ]
 )

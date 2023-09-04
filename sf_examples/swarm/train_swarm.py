@@ -112,7 +112,7 @@ def override_params_for_batched_sampling(cfg):
     cfg.value_bootstrap=False
     cfg.normalize_input=False
     cfg.normalize_returns=False
-    cfg.quads_mode="mix"
+    cfg.quads_mode="static_same_goal"
     # save_best_after=int(5e6)
     cfg.rollout = 128
     cfg.kl_loss_coeff=0.1,
