@@ -16,7 +16,7 @@ _params = ParamGrid(
 
 vstr = f"swarm"
 
-cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm_neweval --hyper True --wandb_user khegde --wandb_group drones_actual_neweval --train_for_env_steps 1_000_000_000 --meta_batch_size 16 --continuous_tanh_scale 5"
+cli = "python -m sf_examples.swarm.train_swarm --with_wandb=True --wandb_tag paper_bench_swarm_neweval2 --hyper True --wandb_user khegde --wandb_group drones_actual_neweval2 --train_for_env_steps 1_000_000_000 --meta_batch_size 16 --continuous_tanh_scale 5"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)
