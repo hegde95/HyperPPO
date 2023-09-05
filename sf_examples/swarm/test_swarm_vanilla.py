@@ -1,6 +1,6 @@
 import sys
 from sample_factory.enjoy import *
-from sf_examples.swarm.train_swarm import parse_swarm_cfg, register_swarm_components, QUAD_BASELINE_CLI, override_params_for_batched_sampling
+from sf_examples.swarm.train_swarm import parse_swarm_cfg, register_swarm_components, QUAD_BASELINE_CLI, override_params_for_batched_sampling, register_models
 from sample_factory.envs.env_utils import register_env
 from swarm_rl.env_wrappers.quad_utils import make_quadrotor_env
 from typing import Any
@@ -13,10 +13,6 @@ import os
 
 def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     verbose = True
-
-    list_of_test_archs = [
-                    [32, 32],                                   
-                ]
     cfg = load_from_checkpoint(cfg)
 
     cfg.quads_view_mode = "local"
@@ -74,21 +70,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
         checkpoint_dict = Learner.load_checkpoint([milestone_to_load], device)
 
     actor_critic.load_state_dict(checkpoint_dict["model"])
-    ghn = actor_critic.actor_encoder.ghn
-    ghn.eval()    
-
-    # test_arch_model = MlpNetwork(fc_layers=arch_to_test, inp_dim = env.observation_space['obs'].shape[0], out_dim = env.action_space.shape[0]).to(device=device)
-    list_of_test_arch_indices = [[i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == t_arc][0] for t_arc in list_of_test_archs]
-    list_of_test_shape_inds = torch.stack([actor_critic.actor_encoder.list_of_shape_inds[index][0:11] for k,index in enumerate(list_of_test_arch_indices)])
-
-    # arch_index = [i for i,arc in enumerate(actor_critic.actor_encoder.list_of_arcs) if list(arc) == arch_to_test][0]
-    # shape_ind = actor_critic.actor_encoder.list_of_shape_inds[arch_index]
-    # shape_ind = shape_ind[:torch.where(shape_ind == -1.0)[0][0]]
-
-    # _ = ghn([test_arch_model], return_embeddings=False, shape_ind = shape_ind.view(-1,1))
-    actor_critic.actor_encoder.set_graph(list_of_test_arch_indices, list_of_test_shape_inds)
-    test_arch_policy = actor_critic.actor_encoder.current_model[0]
-
+    
     episode_rewards = [deque([], maxlen=100) for _ in range(env.num_agents)]
     true_objectives = [deque([], maxlen=100) for _ in range(env.num_agents)]
     num_frames = 0
@@ -116,11 +98,11 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
             if not cfg.no_render:
                 visualize_policy_inputs(normalized_obs)
 
-            # policy_outputs = actor_critic(normalized_obs, rnn_states, sample_actions=True)
+            # policy_outputs = actor_critic(normalized_obs, rnn_states)
             # x, std_dev = actor_critic.forward_head(normalized_obs)
-            # actions = actor_critic.actor_encoder(normalized_obs['obs'])[0]
+            actions = actor_critic.actor_encoder(normalized_obs)
 
-            actions = test_arch_policy(normalized_obs['obs'])
+            # actions = test_arch_policy(normalized_obs['obs'])
 
 
             # x, new_rnn_states = actor_critic.forward_core(x, rnn_states)
@@ -138,20 +120,21 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
             # action_distribution_params, action_distribution = actor_critic.action_parameterization(actions.view(1,-1), action_stddevs = None)
 
             # if cfg.eval_deterministic:
-            #     # action_distribution = actor_critic.action_distribution()
+            #     action_distribution = actor_critic.action_distribution()
             #     actions = argmax_actions(action_distribution)[0]
 
             # actions shape should be [num_agents, num_actions] even if it's [1, 1]
-            if actions.ndim == 1:
-                actions = unsqueeze_tensor(actions, dim=-1)
-            actions = preprocess_actions(env_info, actions)
+            # if actions.ndim == 1:
+            #     actions = unsqueeze_tensor(actions, dim=-1)
+            # actions = preprocess_actions(env_info, actions)
+            actions = actions.cpu().numpy()
 
             # rnn_states = policy_outputs["new_rnn_states"]
 
             for _ in range(render_action_repeat):
                 last_render_start = render_frame(cfg, env, video_frames, num_episodes, last_render_start)
 
-                obs, rew, terminated, truncated, infos = env.step(actions)
+                obs, rew, terminated, truncated, infos = env.step(actions.reshape(1,-1))
                 total_rewraw_spin += infos['rewards']['rewraw_spin']
                 dones = make_dones(terminated, truncated)
                 infos = [{} for _ in range(env_info.num_agents)] if infos is None else infos
