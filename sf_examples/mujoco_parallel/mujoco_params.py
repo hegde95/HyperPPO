@@ -53,8 +53,9 @@ def mujoco_override_defaults(env, parser):
         async_rl=False,
         meta_batch_size=8,
         wandb_project = "hyperppo",
-        save_milestones_sec = 3600,
-
+        save_milestones_sec = 1800,
+        eval_every_steps = 0,
+        train_for_seconds = 10800,
     )
 
 

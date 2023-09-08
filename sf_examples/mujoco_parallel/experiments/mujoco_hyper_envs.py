@@ -4,7 +4,7 @@ from sample_factory.utils.algo_version import ALGO_VERSION
 
 _params = ParamGrid(
     [
-        ("seed", seeds(8)),
+        ("seed", seeds(4)),
         ("env", ["mujoco_halfcheetah"]),  #["mujoco_ant", "mujoco_humanoid", "mujoco_halfcheetah", "mujoco_walker2d"]
         ("dual_critic", [False]),
         ("multi_stddev", [False]),
@@ -13,9 +13,9 @@ _params = ParamGrid(
     ]
 )
 
-vstr = f"hyper"
+vstr = f"mujoco"
 
-cli = "python -m sf_examples.mujoco_parallel.train_mujoco --with_wandb=True --wandb_tag paper_bench_neweval --hyper True --wandb_user khegde --wandb_group paper_bench_neweval"
+cli = "python -m sf_examples.mujoco_parallel.train_mujoco --with_wandb=True --wandb_tag paper_bench_neweval3 --hyper True --wandb_user khegde --wandb_group paper_bench_neweval3"
 
 _experiments = [Experiment(vstr, cli, _params.generate_params())]
 RUN_DESCRIPTION = RunDescription(vstr, experiments=_experiments)
