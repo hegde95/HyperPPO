@@ -11,10 +11,13 @@ from tqdm import tqdm
 import pandas as pd
 
 
-QUADS_MODE_LIST_SINGLE = ['static_same_goal', 'static_diff_goal',  # static formations
-                          'ep_lissajous3D', 'ep_rand_bezier',  # evader pursuit
-                          'dynamic_same_goal',  # dynamic formations
-                          ]
+# QUADS_MODE_LIST_SINGLE = ['static_same_goal', 'static_diff_goal',  # static formations
+#                           'ep_lissajous3D', 'ep_rand_bezier',  # evader pursuit
+#                           'dynamic_same_goal',  # dynamic formations
+#                           ]
+
+# QUADS_MODE_LIST_SINGLE = ['static_same_goal']
+QUADS_MODE_LIST_SINGLE = ['ep_rand_bezier']
 
 def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
     verbose = False
@@ -86,7 +89,7 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
         os.makedirs(dataframe_dir)
 
 
-    for quad_mode in tqdm(QUADS_MODE_LIST_SINGLE):
+    for quad_mode in QUADS_MODE_LIST_SINGLE:
         cfg.quads_mode = quad_mode
         env = make_env_func_batched(
             cfg, env_config=AttrDict(worker_index=0, vector_index=0, env_id=0), render_mode=render_mode
@@ -108,24 +111,28 @@ def enjoy(cfg: Config) -> Tuple[StatusCode, float]:
 
 
         archs_per_num = len(list_of_test_arch_indices) // num  
-        episode_rewards = np.zeros((len(list_of_test_arch_indices)))
+        episode_rewards_means = np.zeros((len(list_of_test_arch_indices)))
+        episode_rewards_stds = np.zeros((len(list_of_test_arch_indices)))
 
-        for k in range(num):
+        for k in tqdm(range(num)):
             actor_critic.actor_encoder.set_graph(list_of_test_arch_indices[k*archs_per_num:(k+1)*archs_per_num], list_of_test_shape_inds[k*archs_per_num:(k+1)*archs_per_num])
             episode_rewards_per_num, finished_episode_per_num = eval_for_given_arch(env.num_agents, env, actor_critic, env_info, cfg, device)
-            episode_rewards[k*archs_per_num:(k+1)*archs_per_num] = episode_rewards_per_num.reshape(archs_per_num, env.num_agents//archs_per_num).mean(1)
-        
-        test_results_df['reward'] = episode_rewards
-        dataframe_name = os.path.join(dataframe_dir, f"test_results_{quad_mode}.csv")
+            episode_rewards_means[k*archs_per_num:(k+1)*archs_per_num] = episode_rewards_per_num.reshape(archs_per_num, env.num_agents//archs_per_num).mean(1)
+            episode_rewards_stds[k*archs_per_num:(k+1)*archs_per_num] = episode_rewards_per_num.reshape(archs_per_num, env.num_agents//archs_per_num).std(1)
+
+        test_results_df['reward'] = episode_rewards_means
+        test_results_df['reward_std'] = episode_rewards_stds
+        dataframe_name = os.path.join(dataframe_dir, f"test_results_{quad_mode}_{cfg.milestone_name}.csv")
         test_results_df.to_csv(dataframe_name, index=False)
+        print(f"Saved dataframe to {dataframe_name}")
 
 
 
 
-    return ExperimentStatus.SUCCESS, sum([sum(episode_rewards[i]) for i in range(env.num_agents)]) / sum(
-        [len(episode_rewards[i]) for i in range(env.num_agents)]
-    )
-
+    # return ExperimentStatus.SUCCESS, sum([sum(episode_rewards[i]) for i in range(env.num_agents)]) / sum(
+    #     [len(episode_rewards[i]) for i in range(env.num_agents)]
+    # )
+    return ExperimentStatus.SUCCESS, 0
 
 
 def eval_for_given_arch(num_eval_envs, eval_env, actor_critic, env_info, cfg, device):
