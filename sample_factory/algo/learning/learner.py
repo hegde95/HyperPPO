@@ -1225,10 +1225,10 @@ class Learner(Configurable):
     
     
     def eval(self, stats: Dict) -> Dict:
-        num = 175
-        archs_per_num = len(self.list_of_test_arch_indices) // num  
-        episode_rewards = np.zeros((len(self.list_of_test_arch_indices)))
         if self.cfg.hyper:
+            num = 175
+            archs_per_num = len(self.list_of_test_arch_indices) // num  
+            episode_rewards = np.zeros((len(self.list_of_test_arch_indices)))
             for k in range(num):
                 self.actor_critic.actor_encoder.set_graph(self.list_of_test_arch_indices[k*archs_per_num:(k+1)*archs_per_num], self.list_of_test_shape_inds[k*archs_per_num:(k+1)*archs_per_num])
                 episode_rewards_per_num, finished_episode_per_num = self.eval_for_given_arch()
