@@ -7,7 +7,7 @@ render_mode = "human" if render else None
 
 env = RandomizedMTEnv(eval = True, render_mode=render_mode)
 
-for k in range(10):
+for k in range(20):
     obs, info = env.reset()
     print(f"Resetting env to {env.env_name}...")
 

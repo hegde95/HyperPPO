@@ -511,7 +511,7 @@ class Learner(Configurable):
         kl_old = masked_select(kl_old, valids, num_invalids)
         kl_loss = kl_old.mean()
 
-        kl_loss *= self.cfg.kl_loss_coeff[0]
+        kl_loss *= self.cfg.kl_loss_coeff
 
         return kl_old, kl_loss
 
