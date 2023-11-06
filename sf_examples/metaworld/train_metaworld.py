@@ -43,4 +43,4 @@ def main():  # pragma: no cover
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
-# python -m sf_examples.metaworld.train_metaworld --env metaworld_multi --experiment bpt1 --restart_behavior overwrite --train_dir dummy --hyper False --mt_task button-press-topdown
+# python -m sf_examples.metaworld.train_metaworld --env metaworld_multi --experiment bpt1 --restart_behavior overwrite --train_dir dummy --hyper False --mt_task button-press-topdown --with_wandb True --wandb_group single_task

@@ -8,7 +8,7 @@ from sample_factory.utils.utils import str2bool
 def add_hyper_args(p: ArgumentParser):
     p.add_argument(
         "--hyper",
-        default=True,
+        default=False,
         type=str2bool,
         help="Train a hyper policy",
     )

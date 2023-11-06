@@ -43,7 +43,7 @@ def metaworld_override_defaults(env, parser):
         serial_mode=True,
         async_rl=False,
         meta_batch_size=8,
-        wandb_project = "hyperppo",
+        wandb_project = "mt_hyperppo",
         save_milestones_sec = 1800,
         eval_every_steps = 0,
         train_for_seconds = 10800,
@@ -55,7 +55,7 @@ def add_metaworld_env_args(env, parser):
     p = parser
     p.add_argument(
         "--env_agents",
-        default=16,
+        default=32,
         type=int,
         help="Num. agents in a vectorized env",
     )
