@@ -195,16 +195,16 @@ class TorchWrapper(gym.Wrapper):
             self.task_wise_obj_to_target[env_name].append(infos['obj_to_target'][i])
             self.task_wise_in_place_reward[env_name].append(infos['in_place_reward'][i])
         
-        results = {}
+        results = {"episode_extra_stats": {}}
         for env_name in self.task_wise_success.keys():
-            results[env_name + '_success'] = np.mean(self.task_wise_success[env_name]) if len(self.task_wise_success[env_name]) > 0 else 0
-            results[env_name + '_near_object'] = np.mean(self.task_wise_near_object[env_name]) if len(self.task_wise_near_object[env_name]) > 0 else 0
-            results[env_name + '_grasp_reward'] = np.mean(self.task_wise_grasp_reward[env_name]) if len(self.task_wise_grasp_reward[env_name]) > 0 else 0
-            results[env_name + '_unscaled_reward'] = np.mean(self.task_wise_unscaled_reward[env_name]) if len(self.task_wise_unscaled_reward[env_name]) > 0 else 0
-            results[env_name + '_TimeLimitTruncated'] = np.mean(self.task_wise_TimeLimitTruncated[env_name]) if len(self.task_wise_TimeLimitTruncated[env_name]) > 0 else 0
-            results[env_name + '_grasp_success'] = np.mean(self.task_wise_grasp_success[env_name]) if len(self.task_wise_grasp_success[env_name]) > 0 else 0
-            results[env_name + '_obj_to_target'] = np.mean(self.task_wise_obj_to_target[env_name]) if len(self.task_wise_obj_to_target[env_name]) > 0 else 0
-            results[env_name + '_in_place_reward'] = np.mean(self.task_wise_in_place_reward[env_name]) if len(self.task_wise_in_place_reward[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_success'] = np.mean(self.task_wise_success[env_name]) if len(self.task_wise_success[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_near_object'] = np.mean(self.task_wise_near_object[env_name]) if len(self.task_wise_near_object[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_grasp_reward'] = np.mean(self.task_wise_grasp_reward[env_name]) if len(self.task_wise_grasp_reward[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_unscaled_reward'] = np.mean(self.task_wise_unscaled_reward[env_name]) if len(self.task_wise_unscaled_reward[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_TimeLimitTruncated'] = np.mean(self.task_wise_TimeLimitTruncated[env_name]) if len(self.task_wise_TimeLimitTruncated[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_grasp_success'] = np.mean(self.task_wise_grasp_success[env_name]) if len(self.task_wise_grasp_success[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_obj_to_target'] = np.mean(self.task_wise_obj_to_target[env_name]) if len(self.task_wise_obj_to_target[env_name]) > 0 else 0
+            results["episode_extra_stats"][env_name + '_in_place_reward'] = np.mean(self.task_wise_in_place_reward[env_name]) if len(self.task_wise_in_place_reward[env_name]) > 0 else 0
 
 
         return results
