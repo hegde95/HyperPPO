@@ -6,7 +6,7 @@ import torch
 from typing import Any
 import gymnasium as gym
 
-
+from sample_factory.utils.utils import log
 
 
 
@@ -46,6 +46,9 @@ class RandomizedMTEnv(gym.Env):
         self.ramdomize_env = True
         if self.env_name is not None:
             self.ramdomize_env = False
+            log.info(f"Using the env {self.env_name} for training")
+        else:
+            log.info(f"Randomizing the env for training")
 
         self.env_dict = {}
         self.env_names = list(MT10_ENV_NAMES_MAP.keys())
@@ -200,7 +203,8 @@ def make_parallel_metaworld_env(env_name, cfg, env_config, render_mode):
         def _init():
             env = RandomizedMTEnv(
                 eval=cfg.eval_policy, 
-                render_mode = None if cfg.no_render else "human", 
+                # render_mode = None if cfg.no_render else "human", 
+                render_mode=render_mode,
                 is_obs_dict = is_obs_dict,
                 env_name=cfg.mt_task
                 )
