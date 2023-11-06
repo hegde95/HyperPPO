@@ -48,7 +48,14 @@ class TorchWrapper(gym.Wrapper):
 
     def step(self, action):
         # action = action.cpu().numpy()
+        if action.ndim == 1:
+            action = action.reshape((1,-1))
         obs, reward, done, info = self.env.step(action)
+        
+        # convert info if it is a tuple
+        if isinstance(info, tuple):
+            info = info[0]
+
         truncated = done
         reward = torch.tensor(reward).float()
         done = torch.tensor(done)
@@ -260,10 +267,13 @@ def make_parallel_metaworld_env(env_name, cfg, env_config, render_mode):
     is_obs_dict = True
     def make_env(rank, is_obs_dict):
         def _init():
-            env = RandomizedMTEnv(is_obs_dict = is_obs_dict)
+            env = RandomizedMTEnv(eval=cfg.eval_policy, render_mode = None if cfg.no_render else "human", is_obs_dict = is_obs_dict)
             return env
         return _init
-    return TorchWrapper(SubprocVecEnv([make_env(i, is_obs_dict = True) for i in range(cfg.env_agents)]), num_agents = cfg.env_agents, is_obs_dict = True)
+    if not cfg.eval_policy:
+        return TorchWrapper(SubprocVecEnv([make_env(i, is_obs_dict = True) for i in range(cfg.env_agents)]), num_agents = cfg.env_agents, is_obs_dict = True)
+    else:
+        return TorchWrapper(SubprocVecEnv([make_env(i, is_obs_dict = True) for i in range(1)]), num_agents = 1, is_obs_dict = True)
 
         
 

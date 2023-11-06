@@ -1,3 +1,5 @@
+from sample_factory.utils.utils import str2bool
+
 def metaworld_override_defaults(env, parser):
     # env_configs = dict(
     #     mujoco_ant=dict(
@@ -67,4 +69,11 @@ def add_metaworld_env_args(env, parser):
         default=16,
         type=int,
         help="Num. agents in a vectorized env",
+    )
+
+    p.add_argument(
+        "--eval_policy",
+        default=False,
+        type=str2bool,
+        help="Whether to evaluate the agent",
     )
