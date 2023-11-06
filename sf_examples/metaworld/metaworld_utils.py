@@ -31,6 +31,114 @@ def get_env(env_name: str, render_mode=None):
     env = TimeLimit(env, max_episode_steps=500)
     return env
 
+
+
+class RandomizedMTEnv(gym.Env):
+    def __init__(self,eval=False, render_mode=None, is_obs_dict=False, env_name=None):
+        
+        if not eval and render_mode == "human":
+            raise ValueError("Cannot render metaworld envs in training mode.")
+
+        self.eval = eval
+        self.render_mode = render_mode
+        self.is_obs_dict = is_obs_dict
+        self.env_name = env_name
+        self.ramdomize_env = True
+        if self.env_name is not None:
+            self.ramdomize_env = False
+
+        self.env_dict = {}
+        self.env_names = list(MT10_ENV_NAMES_MAP.keys())
+        self.num_envs = len(self.env_names)
+
+        self.envs_dict_loaded = False
+        if not self.eval and self.ramdomize_env:
+            
+            # if its in training mode, and we need to randomize the env, then we need to create all the envs in a dict
+            for env_name in self.env_names:
+                self.env_dict[env_name] = get_env(env_name)
+            self.envs_dict_loaded = True
+
+        # get the observation and action spaces
+        self.observation_space, self.action_space = self.get_spaces(is_loaded_envs_dict=self.envs_dict_loaded)
+        
+
+    def get_spaces(self, is_loaded_envs_dict):
+        if is_loaded_envs_dict:
+            self.action_space = self.env_dict[self.env_names[0]].action_space
+            single_task_obs_space = self.env_dict[self.env_names[0]].observation_space
+
+            self.observation_space = self.get_observation_space(single_task_obs_space)
+        else:
+            dummy_env = get_env(self.env_names[0], render_mode=None)
+
+            self.action_space = dummy_env.action_space
+            single_task_obs_space = dummy_env.observation_space
+            self.observation_space = self.get_observation_space(single_task_obs_space)
+        
+        return self.observation_space, self.action_space
+
+    def get_observation_space(self, single_task_obs_space):
+        if self.is_obs_dict:
+            task_space = gym.spaces.Box(low=0, high=self.num_envs-1, shape=(1,), dtype=np.int64)
+            combined_space = gym.spaces.Dict({'state':single_task_obs_space, 'task':task_space})
+            return combined_space
+        else:
+            state_space = single_task_obs_space
+            task_space = gym.spaces.Box(low=0, high=self.num_envs-1, shape=(1,), dtype=np.int64)
+            
+            combined_space_low = np.concatenate([state_space.low, task_space.low])
+            combined_space_high = np.concatenate([state_space.high, task_space.high])
+
+            combined_space = gym.spaces.Box(low=combined_space_low, high=combined_space_high, dtype=np.float32)
+
+            return combined_space
+
+    def make_observation(self, obs, task):
+        if self.is_obs_dict:
+            obs_dict = {}
+            obs_dict['state'] = obs
+            obs_dict['task'] = task
+            return obs_dict
+        else:
+            cat_obs = np.concatenate([obs, task])  
+            return cat_obs          
+
+
+    def reset(self, **kwargs):
+        if self.ramdomize_env:
+            # select a random env 
+            self.env_name = np.random.choice(self.env_names)
+        self.current_task = np.array([MT10_ENV_NAMES_MAP[self.env_name]])
+
+        if self.envs_dict_loaded:
+            self.env = self.env_dict[self.env_name]
+        else:
+            # close the previous env
+            if hasattr(self, 'env'):
+                self.env.close()
+                del self.env
+
+            self.env = get_env(self.env_name, render_mode=self.render_mode)
+
+
+        # reset the env
+        obs = self.env.reset(**kwargs)[0]
+        final_obs = self.make_observation(obs, self.current_task)
+
+        info = {}
+        return final_obs, info
+    
+    def step(self, action):
+        obs, reward, done, truncated, info = self.env.step(action)
+        final_obs = self.make_observation(obs, self.current_task)
+        return final_obs, reward, done, truncated, info
+    
+    def render(self, mode="human"):
+        return self.env.render()
+    
+
+
 class TorchWrapper(gym.Wrapper):
 
     def __init__(self, env, num_agents, is_obs_dict=False):
@@ -86,107 +194,16 @@ class TorchWrapper(gym.Wrapper):
         return getattr(self.env, name)
 
 
-
-
-
-class RandomizedMTEnv(gym.Env):
-    def __init__(self,eval=False, render_mode=None, is_obs_dict=False):
-        
-        if not eval and render_mode == "human":
-            raise ValueError("Cannot render metaworld envs in training mode.")
-
-        self.eval = eval
-        self.render_mode = render_mode
-        self.is_obs_dict = is_obs_dict
-
-        self.env_dict = {}
-        self.env_names = list(MT10_ENV_NAMES_MAP.keys())
-        self.num_envs = len(self.env_names)
-
-        if not self.eval:
-            for env_name in self.env_names:
-                self.env_dict[env_name] = get_env(env_name)
-
-            self.action_space = self.env_dict[self.env_names[0]].action_space
-            single_task_obs_space = self.env_dict[self.env_names[0]].observation_space
-
-            self.observation_space = self.get_observation_space(single_task_obs_space)
-        
-        else:
-            dummy_env = get_env(self.env_names[0], render_mode=None)
-
-            self.action_space = dummy_env.action_space
-            single_task_obs_space = dummy_env.observation_space
-            self.observation_space = self.get_observation_space(single_task_obs_space)
-
-    def get_observation_space(self, single_task_obs_space):
-        if self.is_obs_dict:
-            task_space = gym.spaces.Box(low=0, high=self.num_envs-1, shape=(1,), dtype=np.int64)
-            combined_space = gym.spaces.Dict({'state':single_task_obs_space, 'task':task_space})
-            return combined_space
-        else:
-            state_space = single_task_obs_space
-            task_space = gym.spaces.Box(low=0, high=self.num_envs-1, shape=(1,), dtype=np.int64)
-            
-            combined_space_low = np.concatenate([state_space.low, task_space.low])
-            combined_space_high = np.concatenate([state_space.high, task_space.high])
-
-            combined_space = gym.spaces.Box(low=combined_space_low, high=combined_space_high, dtype=np.float32)
-
-            return combined_space
-
-
-    def make_observation(self, obs, task):
-        if self.is_obs_dict:
-            obs_dict = {}
-            obs_dict['state'] = obs
-            obs_dict['task'] = task
-            return obs_dict
-        else:
-            cat_obs = np.concatenate([obs, task])  
-            return cat_obs          
-
-
-    def reset(self, **kwargs):
-        # select a random env
-        self.env_name = np.random.choice(self.env_names)
-        self.current_task = np.array([MT10_ENV_NAMES_MAP[self.env_name]])
-
-        if not self.eval:
-            self.env = self.env_dict[self.env_name]
-        else:
-            # close the previous env
-            if hasattr(self, 'env'):
-                self.env.close()
-                del self.env
-                self.env = get_env(self.env_name, render_mode=self.render_mode)
-
-
-            else:
-                self.env = get_env(self.env_name, render_mode=self.render_mode)
-
-
-        # reset the env
-        obs = self.env.reset(**kwargs)[0]
-        final_obs = self.make_observation(obs, self.current_task)
-
-        info = {}
-        return final_obs, info
-    
-    def step(self, action):
-        obs, reward, done, truncated, info = self.env.step(action)
-        final_obs = self.make_observation(obs, self.current_task)
-        return final_obs, reward, done, truncated, info
-    
-    def render(self, mode="human"):
-        return self.env.render()
-    
-
 def make_parallel_metaworld_env(env_name, cfg, env_config, render_mode):
     is_obs_dict = True
     def make_env(rank, is_obs_dict):
         def _init():
-            env = RandomizedMTEnv(eval=cfg.eval_policy, render_mode = None if cfg.no_render else "human", is_obs_dict = is_obs_dict)
+            env = RandomizedMTEnv(
+                eval=cfg.eval_policy, 
+                render_mode = None if cfg.no_render else "human", 
+                is_obs_dict = is_obs_dict,
+                env_name=cfg.mt_task
+                )
             return env
         return _init
     if not cfg.eval_policy:

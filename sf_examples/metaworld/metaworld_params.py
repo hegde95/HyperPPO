@@ -1,21 +1,10 @@
 from sample_factory.utils.utils import str2bool
+from sf_examples.metaworld.metaworld_utils import MT10_ENV_NAMES_MAP
+
+
+
 
 def metaworld_override_defaults(env, parser):
-    # env_configs = dict(
-    #     mujoco_ant=dict(
-    #         encoder_mlp_layers=[256, 256, 256, 8],
-    #         save_every_sec=15,
-    #     ),
-    #     mujoco_humanoid=dict(
-    #         encoder_mlp_layers=[256, 256, 256, 17],
-    #     ),
-    #     mujoco_halfcheetah=dict(
-    #         encoder_mlp_layers=[256, 256, 256, 6],
-    #     ),
-    #     mujoco_walker2d=dict(
-    #         encoder_mlp_layers=[256, 256, 256, 6],
-    #     ),
-    # )
 
     parser.set_defaults(
         batched_sampling=True,
@@ -76,4 +65,11 @@ def add_metaworld_env_args(env, parser):
         default=False,
         type=str2bool,
         help="Whether to evaluate the agent",
+    )
+
+    p.add_argument(
+        "--mt_task",
+        default = None,
+        type=str,
+        help="Which metaworld task to train on, if None then train on all. Can choose from: {}".format(list(MT10_ENV_NAMES_MAP.keys())),
     )
