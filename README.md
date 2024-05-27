@@ -1,3 +1,9 @@
+# HyperPPO: A scalable method for finding small policies for robotic control
+This repository consists of code used in this [paper: https://arxiv.org/abs/2309.16663](https://arxiv.org/abs/2309.16663). We present an algorithm that learns architecture-agnostic policies for RL for robotic tasks. This method enables us to find tiny neural networks, capable of modeling performant policies.
+
+This work was accepted for oral presentation at the 2024 IEEE International Conference on Robotics and Automation (Yokohama). The paper website and video results can be found at [https://sites.google.com/usc.edu/hyperppo](https://sites.google.com/usc.edu/hyperppo)
+
+
 This repo is based on 
 ```
 https://github.com/alex-petrenko/sample-factory
@@ -63,4 +69,14 @@ python -m sample_factory.launcher.run --run=sf_examples.brax.experiments.brax_hy
 Drone experiment:
 ```
 python -m sf_examples.swarm.train_swarm --env quadrotor_multi --experiment hyper_test2 --train_dir dummy --train_for_env_steps 1_000_000_000 --dual_critic False --multi_stddev True --arch_sampling_mode biased --hyper True --with_wandb True --wandb_tags debug --meta_batch_size 16 --continuous_tanh_scale 15
+```
+
+# Citation
+```
+@article{hegde2023hyperppo,
+  title={HyperPPO: A scalable method for finding small policies for robotic control},
+  author={Hegde, Shashank and Huang, Zhehui and Sukhatme, Gaurav S},
+  journal={arXiv preprint arXiv:2309.16663},
+  year={2023}
+}
 ```
