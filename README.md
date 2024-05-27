@@ -39,7 +39,7 @@ Add the following line to .bashrc to avoid running into GPU memory issues:
 echo "export XLA_PYTHON_CLIENT_PREALLOCATE=false" >> ~/.bashrc
 ```
 
-To install stable-baselines3 and drone env:
+To install stable-baselines3 (only for the vec env wrapper, for RL we use sample factory) and drone env:
 ```
 git clone git@github.com:DLR-RM/stable-baselines3.git
 cd stable-baselines3
