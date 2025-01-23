@@ -21,6 +21,8 @@ cd sample-factory
 
 pip install -e .
 
+pip install brax==0.1.1
+
 pip install chex==0.1.6
 
 pip install flax==0.6.4
