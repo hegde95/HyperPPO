@@ -94,6 +94,18 @@ class hyperActor(nn.Module):
                 num_archs_with_same_num_layers = len([x for x in self.list_of_arcs if len(x) == num_layers])
                 self.arch_sampling_probs.append(1/num_archs_with_same_num_layers)
             self.arch_sampling_probs = (1/num_unique_num_layers)*np.array(self.arch_sampling_probs)
+            self.arch_sampling_probs = torch.tensor(self.arch_sampling_probs)
+        elif self.architecture_sampling_mode == "nn":
+            self.arch_prob_nn = nn.Sequential(
+                layer_init(nn.Linear(1, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, 64)),
+                nn.Tanh(),
+                layer_init(nn.Linear(64, len(self.list_of_arc_indices)), std=1.0),
+            )
+            self.arch_prob_nn.requires_grad = False
+            self.arch_prob_nn.to(self.device)
+            self.gumbel_eps = 1e-20
 
         self.sampled_indices = None
 
@@ -132,12 +144,14 @@ class hyperActor(nn.Module):
 
         self._initialize_shape_inds()
 
-        self.list_of_arc_indices = np.arange(len(self.list_of_arcs))
+        # self.list_of_arc_indices = np.arange(len(self.list_of_arcs))
+        self.list_of_arc_indices = torch.arange(len(self.list_of_arcs))
         self.all_models = [MlpNetwork(fc_layers=self.list_of_arcs[index], inp_dim = self.obs_dim, out_dim = self.act_dim) for index in self.list_of_arc_indices]
         # if self.std_mode == "multi":
         #     self.log_std = nn.ParameterList([nn.Parameter(torch.zeros(1, np.prod(self.act_dim))) for index in self.list_of_arc_indices])
         # shuffle the list of arcs indices
-        np.random.shuffle(self.list_of_arc_indices)
+        # np.random.shuffle(self.list_of_arc_indices)
+        self.list_of_arc_indices = self.list_of_arc_indices[torch.randperm(len(self.list_of_arc_indices))]
 
 
     def _initialize_shape_inds(self):
@@ -220,16 +234,26 @@ class hyperActor(nn.Module):
             3. uniform: sample the indices of the architecture uniformly
         '''
         if mode == 'biased':
-            self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, p = self.arch_sampling_probs, replace=False)
+            # self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, p = self.arch_sampling_probs, replace=False)
+            self.sampled_indices = torch.multinomial(self.arch_sampling_probs, self.meta_batch_size, replacement=False)
         elif mode == 'sequential':
             self.sampled_indices = self.list_of_arc_indices[self.current_model_indices]
             self.current_model_indices += self.meta_batch_size  
             if max(self.current_model_indices) >= len(self.list_of_arc_indices):
                 self.current_model_indices = np.arange(self.meta_batch_size)
                 # shuffle
-                np.random.shuffle(self.list_of_arc_indices)
+                # np.random.shuffle(self.list_of_arc_indices)
+                self.list_of_arc_indices = self.list_of_arc_indices[torch.randperm(len(self.list_of_arc_indices))]
         elif mode == 'uniform':
-            self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, replace=False)
+            # self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, replace=False)
+            self.sampled_indices = torch.randperm(len(self.list_of_arc_indices))[:self.meta_batch_size]
+        elif mode == 'nn':
+            logits = self.arch_prob_nn(torch.rand(self.meta_batch_size, 1).to(self.device))
+            # implement gumbel softmax
+            # gumbel_noise = -torch.log(-torch.log(torch.rand(logits.shape).to(self.device) + self.gumbel_eps) + self.gumbel_eps)
+            # probs = nn.functional.softmax((logits + gumbel_noise), dim = -1)
+            # self.sampled_indices = np.random.choice(self.list_of_arc_indices, self.meta_batch_size, p = probs.squeeze().detach().cpu().numpy(), replace=False)
+            self.sampled_indices = nn.functional.gumbel_softmax(logits, tau = 1, hard = True).squeeze()
         else:
             raise NotImplementedError
 
